@@ -58,7 +58,6 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
     "drf_spectacular",
-    "django_celery_beat",
     "django_ratelimit",
     "corsheaders",
     "apps.users",
@@ -68,6 +67,13 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.ratings",
 ]
+
+# Add Celery Beat if available
+try:
+    import django_celery_beat
+    INSTALLED_APPS.append("django_celery_beat")
+except ImportError:
+    pass
 
 AUTH_USER_MODEL = "users.User"
 
@@ -118,9 +124,18 @@ EMAIL_HOST_USER = env("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = "no-reply@yourdomain.com"
 
-CELERY_BROKER_URL = env("REDIS_URL")
-CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
-CELERY_RESULT_BACKEND = env("REDIS_URL")
+# Celery configuration (optional)
+REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/1")
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
+
+# Only use Celery Beat if django_celery_beat is available
+try:
+    import django_celery_beat
+    CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+except ImportError:
+    # Celery Beat not available, use default scheduler
+    CELERY_BEAT_SCHEDULER = "celery.beat:PersistentScheduler"
 
 # Sentry (optional)
 SENTRY_DSN = env("SENTRY_DSN", default="")
