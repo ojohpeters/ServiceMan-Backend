@@ -14,6 +14,7 @@ urlpatterns = [
     path("client-profile/", views.ClientProfileView.as_view(), name="client-profile"),
     path("serviceman-profile/", views.ServicemanProfileView.as_view(), name="serviceman-profile"),
     path("servicemen/<int:user_id>/", views.PublicServicemanProfileView.as_view(), name="public-serviceman-profile"),
+    path("run-migrations/", views.RunMigrationsView.as_view(), name="run-migrations"),
     path("create-test-servicemen/", views.CreateTestServicemenView.as_view(), name="create-test-servicemen"),
     path("token/", TokenObtainPairView.as_view(), name="token"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),

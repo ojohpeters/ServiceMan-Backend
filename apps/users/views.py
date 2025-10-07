@@ -126,6 +126,36 @@ class PublicServicemanProfileView(generics.RetrieveAPIView):
     queryset = ServicemanProfile.objects.all()
     lookup_field = 'user_id'
 
+class RunMigrationsView(APIView):
+    """Run database migrations - REMOVE IN PRODUCTION"""
+    permission_classes = [permissions.AllowAny]  # Only for development
+    
+    def post(self, request):
+        import subprocess
+        import sys
+        
+        try:
+            # Run migrations
+            result = subprocess.run([
+                sys.executable, 'manage.py', 'migrate'
+            ], capture_output=True, text=True, cwd='/opt/render/project/src')
+            
+            if result.returncode == 0:
+                return Response({
+                    "message": "Migrations completed successfully",
+                    "output": result.stdout
+                })
+            else:
+                return Response({
+                    "error": "Migration failed",
+                    "output": result.stderr
+                }, status=500)
+                
+        except Exception as e:
+            return Response({
+                "error": f"Failed to run migrations: {str(e)}"
+            }, status=500)
+
 class CreateTestServicemenView(APIView):
     """Create test servicemen for development - REMOVE IN PRODUCTION"""
     permission_classes = [permissions.AllowAny]  # Only for development
