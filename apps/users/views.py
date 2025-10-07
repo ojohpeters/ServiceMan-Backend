@@ -126,6 +126,17 @@ class PublicServicemanProfileView(generics.RetrieveAPIView):
     queryset = ServicemanProfile.objects.all()
     lookup_field = 'user_id'
 
+class HealthCheckView(APIView):
+    """Simple health check endpoint"""
+    permission_classes = [permissions.AllowAny]
+    
+    def get(self, request):
+        return Response({
+            "status": "healthy",
+            "message": "API is working",
+            "timestamp": "2025-10-07"
+        })
+
 class RunMigrationsView(APIView):
     """Run database migrations - REMOVE IN PRODUCTION"""
     permission_classes = [permissions.AllowAny]  # Only for development
