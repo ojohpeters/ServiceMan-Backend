@@ -122,10 +122,15 @@ CELERY_BROKER_URL = env("REDIS_URL")
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_RESULT_BACKEND = env("REDIS_URL")
 
-import sentry_sdk
-import sentry_sdk.integrations.django
+# Sentry (optional)
 SENTRY_DSN = env("SENTRY_DSN", default="")
 if SENTRY_DSN:
-    sentry_sdk.init(dsn=SENTRY_DSN, integrations=[sentry_sdk.integrations.django.DjangoIntegration()])
+    try:
+        import sentry_sdk
+        import sentry_sdk.integrations.django
+        sentry_sdk.init(dsn=SENTRY_DSN, integrations=[sentry_sdk.integrations.django.DjangoIntegration()])
+    except ImportError:
+        # Sentry SDK not installed, skip initialization
+        pass
 
 SECURE_SSL_REDIRECT = False

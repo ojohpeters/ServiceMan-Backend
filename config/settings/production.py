@@ -36,14 +36,18 @@ CELERY_RESULT_BACKEND = REDIS_URL
 # Sentry
 SENTRY_DSN = os.environ.get('SENTRY_DSN')
 if SENTRY_DSN:
-    import sentry_sdk
-    import sentry_sdk.integrations.django
-    sentry_sdk.init(
-        dsn=SENTRY_DSN,
-        integrations=[sentry_sdk.integrations.django.DjangoIntegration()],
-        traces_sample_rate=0.1,
-        send_default_pii=True
-    )
+    try:
+        import sentry_sdk
+        import sentry_sdk.integrations.django
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            integrations=[sentry_sdk.integrations.django.DjangoIntegration()],
+            traces_sample_rate=0.1,
+            send_default_pii=True
+        )
+    except ImportError:
+        # Sentry SDK not installed, skip initialization
+        pass
 
 # Security headers
 SECURE_SSL_REDIRECT = True
