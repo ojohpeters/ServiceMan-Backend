@@ -6,6 +6,7 @@ env = environ.Env()
 environ.Env.read_env(BASE_DIR / ".env")
 
 ROOT_URLCONF = "config.urls"
+WSGI_APPLICATION = "config.wsgi.application"
 APPEND_SLASH = True
 TEMPLATES = [
     {
