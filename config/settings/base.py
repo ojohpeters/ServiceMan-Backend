@@ -118,9 +118,16 @@ EMAIL_HOST_USER = env("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = "no-reply@yourdomain.com"
 
-CELERY_BROKER_URL = env("REDIS_URL")
-CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
-CELERY_RESULT_BACKEND = env("REDIS_URL")
+# Celery configuration (optional)
+REDIS_URL = env("REDIS_URL", default="")
+if REDIS_URL:
+    CELERY_BROKER_URL = REDIS_URL
+    CELERY_RESULT_BACKEND = REDIS_URL
+    CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+else:
+    # Disable Celery if no Redis URL is provided
+    CELERY_TASK_ALWAYS_EAGER = True
+    CELERY_TASK_EAGER_PROPAGATES = True
 
 # Sentry (optional)
 SENTRY_DSN = env("SENTRY_DSN", default="")
