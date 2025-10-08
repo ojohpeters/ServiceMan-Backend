@@ -29,6 +29,11 @@ EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = os.environ.get('EMAIL_HOST_USER', 'no-reply@yourdomain.com')
 
+# Additional email settings for better delivery
+EMAIL_TIMEOUT = 30
+EMAIL_USE_SSL = False  # Use TLS instead of SSL
+EMAIL_SUBJECT_PREFIX = '[ServiceMan] '
+
 # Redis/Celery (optional - only if Redis is available)
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/1')
 if REDIS_URL and REDIS_URL != 'redis://localhost:6379/1':

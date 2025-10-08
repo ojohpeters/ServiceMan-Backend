@@ -15,6 +15,7 @@ urlpatterns = [
     path("serviceman-profile/", views.ServicemanProfileView.as_view(), name="serviceman-profile"),
     path("servicemen/<int:user_id>/", views.PublicServicemanProfileView.as_view(), name="public-serviceman-profile"),
     path("create-test-servicemen/", views.CreateTestServicemenView.as_view(), name="create-test-servicemen"),
+    path("test-email/", views.TestEmailView.as_view(), name="test-email"),
     path("token/", TokenObtainPairView.as_view(), name="token"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("password-reset/", views.PasswordResetRequestView.as_view(), name="password-reset"),

@@ -38,12 +38,29 @@ class RegisterView(generics.CreateAPIView):
         url = self.request.build_absolute_uri(
             reverse('users:verify-email') + f"?uid={uid}&token={token}"
         )
-        send_mail(
-            "Verify your email",
-            f"Please verify your email: {url}",
-            settings.DEFAULT_FROM_EMAIL,
-            [user.email],
-        )
+        
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Sending verification email to {user.email}")
+        logger.info(f"From: {settings.DEFAULT_FROM_EMAIL}")
+        logger.info(f"SMTP Host: {settings.EMAIL_HOST}")
+        logger.info(f"SMTP Port: {settings.EMAIL_PORT}")
+        logger.info(f"SMTP User: {settings.EMAIL_HOST_USER}")
+        logger.info(f"SMTP TLS: {settings.EMAIL_USE_TLS}")
+        
+        try:
+            result = send_mail(
+                "Verify your email",
+                f"Please verify your email: {url}",
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                fail_silently=False,
+            )
+            logger.info(f"Email sent successfully. Result: {result}")
+        except Exception as e:
+            logger.error(f"Failed to send email: {e}")
+            raise
 
 class VerifyEmailView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -91,12 +108,29 @@ class ResendVerificationEmailView(APIView):
         url = self.request.build_absolute_uri(
             reverse('users:verify-email') + f"?uid={uid}&token={token}"
         )
-        send_mail(
-            "Verify your email",
-            f"Please verify your email: {url}",
-            settings.DEFAULT_FROM_EMAIL,
-            [user.email],
-        )
+        
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Sending verification email to {user.email}")
+        logger.info(f"From: {settings.DEFAULT_FROM_EMAIL}")
+        logger.info(f"SMTP Host: {settings.EMAIL_HOST}")
+        logger.info(f"SMTP Port: {settings.EMAIL_PORT}")
+        logger.info(f"SMTP User: {settings.EMAIL_HOST_USER}")
+        logger.info(f"SMTP TLS: {settings.EMAIL_USE_TLS}")
+        
+        try:
+            result = send_mail(
+                "Verify your email",
+                f"Please verify your email: {url}",
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                fail_silently=False,
+            )
+            logger.info(f"Email sent successfully. Result: {result}")
+        except Exception as e:
+            logger.error(f"Failed to send email: {e}")
+            raise
 
 class UserMeView(generics.RetrieveAPIView):
     serializer_class = UserSerializer
@@ -240,3 +274,56 @@ class PasswordResetConfirmView(APIView):
             user.save()
             return Response({"detail": "Password has been reset."})
         return Response({"detail": "Invalid token."}, status=400)
+
+class TestEmailView(APIView):
+    permission_classes = [permissions.AllowAny]  # Only for development
+    
+    def post(self, request):
+        # Test email configuration
+        email = request.data.get('email', 'test@example.com')
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Log current email settings
+        logger.info("=== EMAIL CONFIGURATION DEBUG ===")
+        logger.info(f"EMAIL_BACKEND: {settings.EMAIL_BACKEND}")
+        logger.info(f"EMAIL_HOST: {settings.EMAIL_HOST}")
+        logger.info(f"EMAIL_PORT: {settings.EMAIL_PORT}")
+        logger.info(f"EMAIL_HOST_USER: {settings.EMAIL_HOST_USER}")
+        logger.info(f"EMAIL_USE_TLS: {settings.EMAIL_USE_TLS}")
+        logger.info(f"DEFAULT_FROM_EMAIL: {settings.DEFAULT_FROM_EMAIL}")
+        
+        try:
+            result = send_mail(
+                "Test Email from ServiceMan API",
+                "This is a test email to verify email configuration is working.",
+                settings.DEFAULT_FROM_EMAIL,
+                [email],
+                fail_silently=False,
+            )
+            logger.info(f"Test email sent successfully. Result: {result}")
+            return Response({
+                "detail": "Test email sent successfully",
+                "email_settings": {
+                    "backend": settings.EMAIL_BACKEND,
+                    "host": settings.EMAIL_HOST,
+                    "port": settings.EMAIL_PORT,
+                    "user": settings.EMAIL_HOST_USER,
+                    "tls": settings.EMAIL_USE_TLS,
+                    "from": settings.DEFAULT_FROM_EMAIL,
+                }
+            }, status=200)
+        except Exception as e:
+            logger.error(f"Test email failed: {e}")
+            return Response({
+                "detail": f"Test email failed: {str(e)}",
+                "email_settings": {
+                    "backend": settings.EMAIL_BACKEND,
+                    "host": settings.EMAIL_HOST,
+                    "port": settings.EMAIL_PORT,
+                    "user": settings.EMAIL_HOST_USER,
+                    "tls": settings.EMAIL_USE_TLS,
+                    "from": settings.DEFAULT_FROM_EMAIL,
+                }
+            }, status=500)
