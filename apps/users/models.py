@@ -1,6 +1,34 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 
+
+class Skill(models.Model):
+    """
+    Represents a skill that servicemen can have.
+    Skills are categorized and can be assigned to multiple servicemen.
+    """
+    CATEGORY_CHOICES = [
+        ('TECHNICAL', 'Technical'),
+        ('MANUAL', 'Manual Labor'),
+        ('CREATIVE', 'Creative'),
+        ('PROFESSIONAL', 'Professional Services'),
+        ('OTHER', 'Other'),
+    ]
+    
+    name = models.CharField(max_length=100, unique=True)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='OTHER')
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['category', 'name']
+    
+    def __str__(self):
+        return f"{self.name} ({self.get_category_display()})"
+
+
 class User(AbstractUser):
     ADMIN = 'ADMIN'
     SERVICEMAN = 'SERVICEMAN'
@@ -25,6 +53,7 @@ class ClientProfile(models.Model):
 class ServicemanProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='serviceman_profile')
     category = models.ForeignKey('services.Category', on_delete=models.SET_NULL, null=True, blank=True)
+    skills = models.ManyToManyField(Skill, related_name='servicemen', blank=True)
     rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.0)
     total_jobs_completed = models.IntegerField(default=0)
     bio = models.TextField(blank=True)
@@ -33,3 +62,6 @@ class ServicemanProfile(models.Model):
     is_available = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.user.get_full_name() or self.user.username} - Serviceman Profile"

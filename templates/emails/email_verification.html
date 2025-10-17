@@ -1,0 +1,53 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Verify Your Email - ServiceMan Platform{% endblock %}
+
+{% block content %}
+<h2>👋 Welcome to ServiceMan Platform!</h2>
+
+<p>Hello <strong>{{ user.username }}</strong>,</p>
+
+<p>Thank you for registering with ServiceMan Platform! We're excited to have you join our community of clients and professional servicemen.</p>
+
+<p>To complete your registration and start using all features, please verify your email address by clicking the button below:</p>
+
+<a href="{{ verification_url }}" class="btn">Verify My Email Address</a>
+
+<p style="color: #6c757d; font-size: 14px;">
+    Or copy and paste this link into your browser:<br>
+    <a href="{{ verification_url }}" style="color: #667eea; word-break: break-all;">{{ verification_url }}</a>
+</p>
+
+<p style="background-color: #e7f3ff; border-left: 4px solid #2196F3; padding: 15px; border-radius: 4px; color: #0c5460;">
+    <strong>ℹ️ Why verify your email?</strong><br>
+    Email verification helps us ensure the security of your account and enables you to receive important notifications about your service requests and bookings.
+</p>
+
+<p style="margin-top: 25px;">
+    <strong>What's Next?</strong>
+</p>
+<ul style="color: #6c757d; font-size: 14px;">
+    <li>Browse our wide range of service categories</li>
+    <li>Book professional servicemen for your needs</li>
+    <li>Track your service requests in real-time</li>
+    <li>Rate and review completed services</li>
+</ul>
+
+<div class="security-warning">
+    <strong>⚠️ Didn't create this account?</strong>
+    <p style="margin: 8px 0 0 0;">
+        If you didn't sign up for ServiceMan Platform, please ignore this email. The account will not be activated without email verification.
+    </p>
+</div>
+
+<p style="margin-top: 25px;">
+    Need help? Contact our support team at <a href="mailto:support@servicemanplatform.com" style="color: #667eea;">support@servicemanplatform.com</a>
+</p>
+
+<p style="margin-top: 20px;">
+    Best regards,<br>
+    <strong>The ServiceMan Platform Team</strong>
+</p>
+{% endblock %}
+
+
