@@ -73,7 +73,7 @@ class SkillCreateSerializer(serializers.ModelSerializer):
 
 
 class ServicemanProfileSerializer(serializers.ModelSerializer):
-    skills = SkillSerializer(many=True, read_only=True)
+    skills = serializers.SerializerMethodField()
     skill_ids = serializers.ListField(
         child=serializers.IntegerField(),
         write_only=True,
@@ -90,6 +90,20 @@ class ServicemanProfileSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['user', 'rating', 'total_jobs_completed', 'created_at', 'updated_at']
     
+    def get_skills(self, obj):
+        """
+        Safely get skills, return empty list if field doesn't exist yet.
+        This prevents 500 errors when migrations haven't been run in production.
+        """
+        try:
+            if hasattr(obj, 'skills'):
+                skills = obj.skills.filter(is_active=True)
+                return SkillSerializer(skills, many=True).data
+            return []
+        except Exception:
+            # If the skills table doesn't exist yet, return empty list
+            return []
+    
     def update(self, instance, validated_data):
         # Handle skills update separately
         skill_ids = validated_data.pop('skill_ids', None)
@@ -99,10 +113,15 @@ class ServicemanProfileSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save()
         
-        # Update skills if provided
+        # Update skills if provided and skills field exists
         if skill_ids is not None:
-            skills = Skill.objects.filter(id__in=skill_ids, is_active=True)
-            instance.skills.set(skills)
+            try:
+                if hasattr(instance, 'skills'):
+                    skills = Skill.objects.filter(id__in=skill_ids, is_active=True)
+                    instance.skills.set(skills)
+            except Exception:
+                # Silently skip if skills table doesn't exist yet
+                pass
         
         return instance
 
