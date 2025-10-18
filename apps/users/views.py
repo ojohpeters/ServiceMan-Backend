@@ -125,6 +125,81 @@ class UserMeView(generics.RetrieveAPIView):
     def get_object(self):
         return self.request.user
 
+
+class UserDetailView(generics.RetrieveAPIView):
+    """
+    Get any user's details by ID (Admin only or public for servicemen).
+    
+    Returns user information including:
+    - Basic user data (username, email, user_type)
+    - Profile data (if serviceman or client)
+    
+    Access:
+    - Admins can view any user
+    - Authenticated users can view servicemen (public profiles)
+    - Users can view themselves
+    
+    Tags: User Profiles
+    """
+    serializer_class = UserSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    queryset = User.objects.all()
+    lookup_field = 'pk'
+    
+    def get_object(self):
+        user = super().get_object()
+        request_user = self.request.user
+        
+        # Allow access if:
+        # 1. Admin viewing any user
+        # 2. User viewing themselves
+        # 3. Anyone viewing a serviceman (public profiles)
+        if (request_user.user_type == 'ADMIN' or 
+            request_user.id == user.id or 
+            user.user_type == 'SERVICEMAN'):
+            return user
+        
+        # Restrict access to client profiles (privacy)
+        if user.user_type == 'CLIENT' and request_user.user_type != 'ADMIN':
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("You don't have permission to view this user's details.")
+        
+        return user
+
+
+class ClientProfileDetailView(generics.RetrieveAPIView):
+    """
+    Get client profile by ID (Admin only or self).
+    
+    Returns complete client profile including:
+    - User information
+    - Contact details (phone, address)
+    - Account creation date
+    
+    Access:
+    - Admins can view any client
+    - Clients can view their own profile
+    
+    Needed for: Service request client details, admin management
+    
+    Tags: User Profiles
+    """
+    serializer_class = ClientProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    queryset = ClientProfile.objects.select_related('user')
+    lookup_field = 'user_id'
+    
+    def get_object(self):
+        profile = super().get_object()
+        request_user = self.request.user
+        
+        # Allow access if admin or viewing own profile
+        if request_user.user_type == 'ADMIN' or request_user.id == profile.user_id:
+            return profile
+        
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied("You don't have permission to view this client's profile.")
+
 class ClientProfileView(generics.RetrieveUpdateAPIView):
     """
     Retrieve or update client profile.
@@ -160,6 +235,115 @@ class ServicemanProfileView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         return self.request.user.serviceman_profile
+
+class AllServicemenListView(generics.ListAPIView):
+    """
+    List all servicemen across all categories (Public).
+    
+    Returns all servicemen with:
+    - Availability status
+    - Active jobs count
+    - Skills, ratings, experience
+    - Category information
+    
+    Query Parameters:
+    - category: Filter by category ID
+    - is_available: Filter by availability (true/false)
+    - min_rating: Filter by minimum rating
+    - search: Search by name or username
+    - ordering: Sort by rating, total_jobs_completed, etc.
+    
+    Tags: User Profiles
+    """
+    serializer_class = ServicemanProfileSerializer
+    permission_classes = [permissions.AllowAny]
+    
+    def get_queryset(self):
+        from django.db.models import Q, Count, Case, When, IntegerField
+        
+        queryset = ServicemanProfile.objects.select_related(
+            'user', 'category'
+        ).prefetch_related('skills').annotate(
+            active_jobs_count=Count(
+                Case(
+                    When(
+                        Q(user__serviceman_requests__status='IN_PROGRESS', user__serviceman_requests__is_deleted=False) |
+                        Q(user__backup_requests__status='IN_PROGRESS', user__backup_requests__is_deleted=False),
+                        then=1
+                    ),
+                    output_field=IntegerField()
+                )
+            )
+        )
+        
+        # Filter by category
+        category = self.request.query_params.get('category', None)
+        if category:
+            queryset = queryset.filter(category_id=category)
+        
+        # Filter by availability
+        is_available = self.request.query_params.get('is_available', None)
+        if is_available is not None:
+            is_available_bool = is_available.lower() == 'true'
+            queryset = queryset.filter(is_available=is_available_bool)
+        
+        # Filter by minimum rating
+        min_rating = self.request.query_params.get('min_rating', None)
+        if min_rating:
+            queryset = queryset.filter(rating__gte=float(min_rating))
+        
+        # Search by name or username
+        search = self.request.query_params.get('search', None)
+        if search:
+            queryset = queryset.filter(
+                Q(user__username__icontains=search) |
+                Q(user__first_name__icontains=search) |
+                Q(user__last_name__icontains=search)
+            )
+        
+        # Ordering
+        ordering = self.request.query_params.get('ordering', '-rating')
+        valid_orderings = ['rating', '-rating', 'total_jobs_completed', 
+                          '-total_jobs_completed', 'years_of_experience', 
+                          '-years_of_experience', 'created_at', '-created_at']
+        if ordering in valid_orderings:
+            queryset = queryset.order_by(ordering)
+        else:
+            # Default: Available first, then by rating
+            queryset = queryset.order_by('-is_available', '-rating')
+        
+        return queryset
+    
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        # Calculate statistics
+        total_count = queryset.count()
+        available_count = queryset.filter(is_available=True).count()
+        busy_count = total_count - available_count
+        
+        # Paginate
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            response = self.get_paginated_response(serializer.data)
+            response.data['statistics'] = {
+                'total_servicemen': total_count,
+                'available': available_count,
+                'busy': busy_count,
+            }
+            return response
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            'statistics': {
+                'total_servicemen': total_count,
+                'available': available_count,
+                'busy': busy_count,
+            },
+            'results': serializer.data
+        })
+
 
 class PublicServicemanProfileView(generics.RetrieveAPIView):
     """

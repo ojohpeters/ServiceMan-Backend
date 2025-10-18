@@ -20,8 +20,15 @@ urlpatterns = [
     
     # User Profile
     path("me/", views.UserMeView.as_view(), name="me"),
+    path("<int:pk>/", views.UserDetailView.as_view(), name="user-detail"),
     path("client-profile/", views.ClientProfileView.as_view(), name="client-profile"),
     path("serviceman-profile/", views.ServicemanProfileView.as_view(), name="serviceman-profile"),
+    
+    # Clients - Get by ID
+    path("clients/<int:user_id>/", views.ClientProfileDetailView.as_view(), name="client-detail"),
+    
+    # Servicemen - List all or get specific
+    path("servicemen/", views.AllServicemenListView.as_view(), name="servicemen-list"),
     path("servicemen/<int:user_id>/", views.PublicServicemanProfileView.as_view(), name="public-serviceman-profile"),
     
     # Skills Management
