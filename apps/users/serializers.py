@@ -80,15 +80,19 @@ class ServicemanProfileSerializer(serializers.ModelSerializer):
         required=False,
         help_text="List of skill IDs to assign to serviceman"
     )
+    active_jobs_count = serializers.SerializerMethodField()
+    availability_status = serializers.SerializerMethodField()
     
     class Meta:
         model = ServicemanProfile
         fields = [
             'user', 'category', 'skills', 'skill_ids', 'rating', 
             'total_jobs_completed', 'bio', 'years_of_experience', 
-            'phone_number', 'is_available', 'created_at', 'updated_at'
+            'phone_number', 'is_available', 'active_jobs_count', 
+            'availability_status', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['user', 'rating', 'total_jobs_completed', 'created_at', 'updated_at']
+        read_only_fields = ['user', 'rating', 'total_jobs_completed', 'active_jobs_count', 
+                          'availability_status', 'created_at', 'updated_at']
     
     def get_skills(self, obj):
         """
@@ -103,6 +107,45 @@ class ServicemanProfileSerializer(serializers.ModelSerializer):
         except Exception:
             # If the skills table doesn't exist yet, return empty list
             return []
+    
+    def get_active_jobs_count(self, obj):
+        """
+        Get count of serviceman's active jobs (IN_PROGRESS status).
+        """
+        try:
+            from apps.services.models import ServiceRequest
+            from django.db.models import Q
+            
+            active_jobs = ServiceRequest.objects.filter(
+                Q(serviceman=obj.user) | Q(backup_serviceman=obj.user),
+                status='IN_PROGRESS',
+                is_deleted=False
+            ).count()
+            return active_jobs
+        except Exception:
+            return 0
+    
+    def get_availability_status(self, obj):
+        """
+        Get human-readable availability status with context.
+        """
+        if obj.is_available:
+            return {
+                "status": "available",
+                "label": "Available",
+                "message": "This serviceman is available for new jobs",
+                "can_book": True
+            }
+        else:
+            active_jobs = self.get_active_jobs_count(obj)
+            return {
+                "status": "busy",
+                "label": "Currently Busy",
+                "message": f"This serviceman is currently working on {active_jobs} job(s). You can still book them, but delivery may be delayed.",
+                "can_book": True,  # Can still book, just with warning
+                "active_jobs": active_jobs,
+                "warning": "Booking a busy serviceman may result in delayed service. Consider choosing an available serviceman or proceed if you prefer this specific serviceman."
+            }
     
     def update(self, instance, validated_data):
         # Handle skills update separately
