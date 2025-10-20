@@ -41,6 +41,9 @@ urlpatterns = [
     
     # Admin Management
     path("admin/create/", views.AdminCreateView.as_view(), name="admin-create"),
+    path("admin/assign-category/", views.AdminAssignServicemanCategoryView.as_view(), name="admin-assign-category"),
+    path("admin/bulk-assign-category/", views.AdminBulkAssignCategoryView.as_view(), name="admin-bulk-assign-category"),
+    path("admin/servicemen-by-category/", views.AdminGetServicemenByCategoryView.as_view(), name="admin-servicemen-by-category"),
     
     # Development/Testing (Remove in production)
     path("create-test-servicemen/", views.CreateTestServicemenView.as_view(), name="create-test-servicemen"),

@@ -761,6 +761,271 @@ class ServicemanSkillsView(APIView):
 
 
 # ============================================================================
+# ADMIN MANAGEMENT VIEWS
+# ============================================================================
+
+class AdminAssignServicemanCategoryView(APIView):
+    """
+    Assign or reassign a serviceman to a category (Admin only).
+    
+    Allows admin to:
+    - Assign serviceman to a category
+    - Change serviceman's category
+    - Remove category assignment (set to null)
+    
+    Body:
+    {
+        "serviceman_id": int,
+        "category_id": int (or null to remove)
+    }
+    
+    Tags: Admin
+    """
+    permission_classes = [IsAdmin]
+    
+    def post(self, request):
+        from apps.services.models import Category
+        
+        serviceman_id = request.data.get('serviceman_id')
+        category_id = request.data.get('category_id')
+        
+        # Validate required fields
+        if serviceman_id is None:
+            return Response({
+                "detail": "serviceman_id is required"
+            }, status=400)
+        
+        # Get serviceman
+        try:
+            user = User.objects.get(id=serviceman_id, user_type='SERVICEMAN')
+        except User.DoesNotExist:
+            return Response({
+                "detail": f"Serviceman with ID {serviceman_id} not found"
+            }, status=404)
+        
+        # Get category (if provided)
+        category = None
+        if category_id is not None:
+            try:
+                category = Category.objects.get(id=category_id)
+            except Category.DoesNotExist:
+                return Response({
+                    "detail": f"Category with ID {category_id} not found"
+                }, status=404)
+        
+        # Update serviceman category
+        profile = user.serviceman_profile
+        old_category = profile.category
+        profile.category = category
+        profile.save()
+        
+        # Prepare response
+        response_data = {
+            "detail": "Category assignment updated successfully",
+            "serviceman": {
+                "id": user.id,
+                "username": user.username,
+                "full_name": user.get_full_name()
+            },
+            "previous_category": {
+                "id": old_category.id if old_category else None,
+                "name": old_category.name if old_category else None
+            } if old_category else None,
+            "new_category": {
+                "id": category.id if category else None,
+                "name": category.name if category else None
+            } if category else None
+        }
+        
+        # Log the change
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(
+            f"Admin {request.user.username} changed serviceman {user.username}'s "
+            f"category from {old_category} to {category}"
+        )
+        
+        return Response(response_data, status=200)
+
+
+class AdminBulkAssignCategoryView(APIView):
+    """
+    Bulk assign multiple servicemen to a category (Admin only).
+    
+    Useful for:
+    - Assigning new servicemen to categories
+    - Moving servicemen between categories
+    - Organizing servicemen by expertise
+    
+    Body:
+    {
+        "serviceman_ids": [1, 2, 3, 4, 5],
+        "category_id": 2
+    }
+    
+    Tags: Admin
+    """
+    permission_classes = [IsAdmin]
+    
+    def post(self, request):
+        from apps.services.models import Category
+        
+        serviceman_ids = request.data.get('serviceman_ids', [])
+        category_id = request.data.get('category_id')
+        
+        # Validate
+        if not serviceman_ids:
+            return Response({
+                "detail": "serviceman_ids array is required"
+            }, status=400)
+        
+        if category_id is None:
+            return Response({
+                "detail": "category_id is required"
+            }, status=400)
+        
+        # Get category
+        try:
+            category = Category.objects.get(id=category_id)
+        except Category.DoesNotExist:
+            return Response({
+                "detail": f"Category with ID {category_id} not found"
+            }, status=404)
+        
+        # Get servicemen
+        servicemen = User.objects.filter(
+            id__in=serviceman_ids,
+            user_type='SERVICEMAN'
+        )
+        
+        if servicemen.count() == 0:
+            return Response({
+                "detail": "No valid servicemen found with provided IDs"
+            }, status=404)
+        
+        # Update categories
+        updated_count = 0
+        updated_servicemen = []
+        
+        for serviceman in servicemen:
+            profile = serviceman.serviceman_profile
+            profile.category = category
+            profile.save()
+            updated_count += 1
+            updated_servicemen.append({
+                "id": serviceman.id,
+                "username": serviceman.username,
+                "full_name": serviceman.get_full_name()
+            })
+        
+        # Log the change
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(
+            f"Admin {request.user.username} assigned {updated_count} servicemen "
+            f"to category '{category.name}'"
+        )
+        
+        return Response({
+            "detail": f"Successfully assigned {updated_count} servicemen to category '{category.name}'",
+            "category": {
+                "id": category.id,
+                "name": category.name
+            },
+            "updated_servicemen": updated_servicemen,
+            "total_updated": updated_count,
+            "not_found": len(serviceman_ids) - updated_count
+        }, status=200)
+
+
+class AdminGetServicemenByCategoryView(APIView):
+    """
+    Get servicemen grouped by category for admin management (Admin only).
+    
+    Returns all servicemen organized by their categories.
+    Useful for admin dashboard to see category distribution.
+    
+    Tags: Admin
+    """
+    permission_classes = [IsAdmin]
+    
+    def get(self, request):
+        from apps.services.models import Category
+        from django.db.models import Count
+        
+        # Get all categories with servicemen count
+        categories = Category.objects.annotate(
+            servicemen_count=Count('servicemanprofile')
+        ).order_by('name')
+        
+        result = []
+        total_servicemen = 0
+        
+        for category in categories:
+            # Get servicemen in this category
+            servicemen = User.objects.filter(
+                user_type='SERVICEMAN',
+                serviceman_profile__category=category
+            )
+            
+            servicemen_data = []
+            for s in servicemen:
+                servicemen_data.append({
+                    "id": s.id,
+                    "username": s.username,
+                    "full_name": s.get_full_name(),
+                    "email": s.email,
+                    "is_available": s.serviceman_profile.is_available,
+                    "rating": float(s.serviceman_profile.rating),
+                    "total_jobs_completed": s.serviceman_profile.total_jobs_completed
+                })
+            
+            total_servicemen += len(servicemen_data)
+            
+            result.append({
+                "category": {
+                    "id": category.id,
+                    "name": category.name,
+                    "description": category.description
+                },
+                "servicemen_count": len(servicemen_data),
+                "servicemen": servicemen_data
+            })
+        
+        # Get unassigned servicemen (no category)
+        unassigned = User.objects.filter(
+            user_type='SERVICEMAN',
+            serviceman_profile__category__isnull=True
+        )
+        
+        if unassigned.exists():
+            unassigned_data = []
+            for s in unassigned:
+                unassigned_data.append({
+                    "id": s.id,
+                    "username": s.username,
+                    "full_name": s.get_full_name(),
+                    "email": s.email,
+                    "is_available": s.serviceman_profile.is_available,
+                    "rating": float(s.serviceman_profile.rating)
+                })
+            
+            result.append({
+                "category": None,
+                "servicemen_count": len(unassigned_data),
+                "servicemen": unassigned_data,
+                "note": "Unassigned servicemen - no category set"
+            })
+            total_servicemen += len(unassigned_data)
+        
+        return Response({
+            "total_servicemen": total_servicemen,
+            "total_categories": categories.count(),
+            "categories": result
+        })
+
+
+# ============================================================================
 # ADMIN CREATION VIEW
 # ============================================================================
 
