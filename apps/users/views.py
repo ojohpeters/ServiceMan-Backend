@@ -262,7 +262,7 @@ class AllServicemenListView(generics.ListAPIView):
         from django.db.models import Q, Count, Case, When, IntegerField
         
         queryset = ServicemanProfile.objects.select_related(
-            'user', 'category'
+            'user', 'category', 'approved_by'
         ).prefetch_related('skills').annotate(
             active_jobs_count=Count(
                 Case(
@@ -275,6 +275,13 @@ class AllServicemenListView(generics.ListAPIView):
                 )
             )
         )
+        
+        # By default, show only approved servicemen (unless admin wants to see all)
+        show_all = self.request.query_params.get('show_all', 'false').lower() == 'true'
+        is_admin = self.request.user.is_authenticated and self.request.user.user_type == 'ADMIN'
+        
+        if not (show_all and is_admin):
+            queryset = queryset.filter(is_approved=True)
         
         # Filter by category
         category = self.request.query_params.get('category', None)
@@ -976,6 +983,7 @@ class AdminGetServicemenByCategoryView(APIView):
                     "full_name": s.get_full_name(),
                     "email": s.email,
                     "is_available": s.serviceman_profile.is_available,
+                    "is_approved": s.serviceman_profile.is_approved,
                     "rating": float(s.serviceman_profile.rating),
                     "total_jobs_completed": s.serviceman_profile.total_jobs_completed
                 })
@@ -1007,6 +1015,7 @@ class AdminGetServicemenByCategoryView(APIView):
                     "full_name": s.get_full_name(),
                     "email": s.email,
                     "is_available": s.serviceman_profile.is_available,
+                    "is_approved": s.serviceman_profile.is_approved,
                     "rating": float(s.serviceman_profile.rating)
                 })
             
@@ -1023,6 +1032,230 @@ class AdminGetServicemenByCategoryView(APIView):
             "total_categories": categories.count(),
             "categories": result
         })
+
+
+class AdminPendingServicemenView(generics.ListAPIView):
+    """
+    List pending serviceman applications awaiting approval (Admin only).
+    
+    Returns all servicemen who have registered but not yet been approved by admin.
+    Shows complete profile information for admin review.
+    
+    Tags: Admin
+    """
+    serializer_class = ServicemanProfileSerializer
+    permission_classes = [IsAdmin]
+    
+    def get_queryset(self):
+        return ServicemanProfile.objects.filter(
+            is_approved=False
+        ).select_related('user', 'category').prefetch_related('skills').order_by('created_at')
+    
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        total_pending = queryset.count()
+        
+        serializer = self.get_serializer(queryset, many=True)
+        
+        return Response({
+            "total_pending": total_pending,
+            "pending_applications": serializer.data
+        })
+
+
+class AdminApproveServicemanView(APIView):
+    """
+    Approve a serviceman application (Admin only).
+    
+    Approves a serviceman, allowing them to:
+    - Be assigned to service requests
+    - Appear in public servicemen listings
+    - Accept jobs and work
+    
+    Body:
+    {
+        "serviceman_id": int,
+        "category_id": int (optional - assign category during approval),
+        "notes": string (optional - internal notes)
+    }
+    
+    Tags: Admin
+    """
+    permission_classes = [IsAdmin]
+    
+    def post(self, request):
+        from apps.services.models import Category
+        from django.utils import timezone
+        
+        serviceman_id = request.data.get('serviceman_id')
+        category_id = request.data.get('category_id')
+        notes = request.data.get('notes', '')
+        
+        # Validate
+        if not serviceman_id:
+            return Response({
+                "detail": "serviceman_id is required"
+            }, status=400)
+        
+        # Get serviceman
+        try:
+            user = User.objects.get(id=serviceman_id, user_type='SERVICEMAN')
+        except User.DoesNotExist:
+            return Response({
+                "detail": f"Serviceman with ID {serviceman_id} not found"
+            }, status=404)
+        
+        profile = user.serviceman_profile
+        
+        # Check if already approved
+        if profile.is_approved:
+            return Response({
+                "detail": "This serviceman is already approved"
+            }, status=400)
+        
+        # Get category if provided
+        if category_id:
+            try:
+                category = Category.objects.get(id=category_id)
+                profile.category = category
+            except Category.DoesNotExist:
+                return Response({
+                    "detail": f"Category with ID {category_id} not found"
+                }, status=404)
+        
+        # Approve serviceman
+        profile.is_approved = True
+        profile.approved_by = request.user
+        profile.approved_at = timezone.now()
+        profile.save()
+        
+        # Send approval notification
+        try:
+            from apps.notifications.models import Notification
+            Notification.objects.create(
+                user=user,
+                notification_type='SERVICE_ASSIGNED',  # Using existing type
+                title='Serviceman Application Approved',
+                message=f'Congratulations! Your serviceman application has been approved by {request.user.username}. '
+                        f'You can now be assigned to service requests and start accepting jobs. '
+                        f'{f"You have been assigned to category: {profile.category.name}." if profile.category else ""}',
+                is_read=False
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to send approval notification: {e}")
+        
+        # Log the approval
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(
+            f"Admin {request.user.username} approved serviceman {user.username} (ID: {user.id}). "
+            f"Category: {profile.category.name if profile.category else 'Not assigned'}. Notes: {notes}"
+        )
+        
+        return Response({
+            "detail": "Serviceman application approved successfully",
+            "serviceman": {
+                "id": user.id,
+                "username": user.username,
+                "full_name": user.get_full_name(),
+                "email": user.email
+            },
+            "approved_by": request.user.username,
+            "approved_at": profile.approved_at,
+            "category": {
+                "id": profile.category.id if profile.category else None,
+                "name": profile.category.name if profile.category else None
+            } if profile.category else None
+        }, status=200)
+
+
+class AdminRejectServicemanView(APIView):
+    """
+    Reject a serviceman application (Admin only).
+    
+    Rejects a serviceman application and optionally provides a reason.
+    The serviceman remains in the system but cannot be assigned to jobs.
+    
+    Body:
+    {
+        "serviceman_id": int,
+        "rejection_reason": string (required)
+    }
+    
+    Tags: Admin
+    """
+    permission_classes = [IsAdmin]
+    
+    def post(self, request):
+        serviceman_id = request.data.get('serviceman_id')
+        rejection_reason = request.data.get('rejection_reason', '')
+        
+        # Validate
+        if not serviceman_id:
+            return Response({
+                "detail": "serviceman_id is required"
+            }, status=400)
+        
+        if not rejection_reason:
+            return Response({
+                "detail": "rejection_reason is required"
+            }, status=400)
+        
+        # Get serviceman
+        try:
+            user = User.objects.get(id=serviceman_id, user_type='SERVICEMAN')
+        except User.DoesNotExist:
+            return Response({
+                "detail": f"Serviceman with ID {serviceman_id} not found"
+            }, status=404)
+        
+        profile = user.serviceman_profile
+        
+        # Check if already approved
+        if profile.is_approved:
+            return Response({
+                "detail": "Cannot reject an already approved serviceman. Consider deactivating their account instead."
+            }, status=400)
+        
+        # Reject application
+        profile.rejection_reason = rejection_reason
+        profile.save()
+        
+        # Send rejection notification
+        try:
+            from apps.notifications.models import Notification
+            Notification.objects.create(
+                user=user,
+                notification_type='SERVICE_ASSIGNED',
+                title='Serviceman Application Update',
+                message=f'We regret to inform you that your serviceman application has not been approved at this time. '
+                        f'Reason: {rejection_reason}. '
+                        f'If you have questions, please contact support.',
+                is_read=False
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to send rejection notification: {e}")
+        
+        # Log the rejection
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(
+            f"Admin {request.user.username} rejected serviceman {user.username} (ID: {user.id}). "
+            f"Reason: {rejection_reason}"
+        )
+        
+        return Response({
+            "detail": "Serviceman application rejected",
+            "serviceman": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email
+            },
+            "rejected_by": request.user.username,
+            "rejection_reason": rejection_reason
+        }, status=200)
 
 
 # ============================================================================

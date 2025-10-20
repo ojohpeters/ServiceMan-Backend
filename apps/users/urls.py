@@ -45,6 +45,11 @@ urlpatterns = [
     path("admin/bulk-assign-category/", views.AdminBulkAssignCategoryView.as_view(), name="admin-bulk-assign-category"),
     path("admin/servicemen-by-category/", views.AdminGetServicemenByCategoryView.as_view(), name="admin-servicemen-by-category"),
     
+    # Serviceman Approval
+    path("admin/pending-servicemen/", views.AdminPendingServicemenView.as_view(), name="admin-pending-servicemen"),
+    path("admin/approve-serviceman/", views.AdminApproveServicemanView.as_view(), name="admin-approve-serviceman"),
+    path("admin/reject-serviceman/", views.AdminRejectServicemanView.as_view(), name="admin-reject-serviceman"),
+    
     # Development/Testing (Remove in production)
     path("create-test-servicemen/", views.CreateTestServicemenView.as_view(), name="create-test-servicemen"),
     path("test-email/", views.TestEmailView.as_view(), name="test-email"),

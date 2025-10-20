@@ -60,8 +60,37 @@ class ServicemanProfile(models.Model):
     years_of_experience = models.IntegerField(null=True, blank=True)
     phone_number = models.CharField(max_length=20, blank=True, default='')
     is_available = models.BooleanField(default=True)
+    
+    # Approval fields
+    is_approved = models.BooleanField(
+        default=False,
+        help_text="Admin approval status for serviceman application"
+    )
+    approved_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approved_servicemen',
+        help_text="Admin who approved this serviceman"
+    )
+    approved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the serviceman was approved"
+    )
+    rejection_reason = models.TextField(
+        blank=True,
+        help_text="Reason for rejection (if applicable)"
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['is_approved', 'created_at']),
+        ]
     
     def __str__(self):
         return f"{self.user.get_full_name() or self.user.username} - Serviceman Profile"

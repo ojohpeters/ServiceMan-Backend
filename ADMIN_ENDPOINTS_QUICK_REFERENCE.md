@@ -1,6 +1,36 @@
 # ⚡ Admin Endpoints - Quick Reference
 
-## 🎯 Category Assignment (NEW!)
+## ✅ Serviceman Approval (NEW!)
+
+### 1. List Pending Applications
+```bash
+GET /api/users/admin/pending-servicemen/
+```
+
+### 2. Approve Serviceman
+```bash
+POST /api/users/admin/approve-serviceman/
+
+{
+  "serviceman_id": 15,
+  "category_id": 2,
+  "notes": "Approved for electrical work"
+}
+```
+
+### 3. Reject Serviceman
+```bash
+POST /api/users/admin/reject-serviceman/
+
+{
+  "serviceman_id": 15,
+  "rejection_reason": "Insufficient documentation"
+}
+```
+
+---
+
+## 🎯 Category Assignment
 
 ### 1. Assign Serviceman to Category
 ```bash

@@ -89,10 +89,12 @@ class ServicemanProfileSerializer(serializers.ModelSerializer):
             'user', 'category', 'skills', 'skill_ids', 'rating', 
             'total_jobs_completed', 'bio', 'years_of_experience', 
             'phone_number', 'is_available', 'active_jobs_count', 
-            'availability_status', 'created_at', 'updated_at'
+            'availability_status', 'is_approved', 'approved_by', 'approved_at',
+            'rejection_reason', 'created_at', 'updated_at'
         ]
         read_only_fields = ['user', 'rating', 'total_jobs_completed', 'active_jobs_count', 
-                          'availability_status', 'created_at', 'updated_at']
+                          'availability_status', 'is_approved', 'approved_by', 'approved_at',
+                          'rejection_reason', 'created_at', 'updated_at']
     
     def get_skills(self, obj):
         """
