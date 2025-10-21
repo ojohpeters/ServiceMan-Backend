@@ -3,6 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db.models import Q
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema, OpenApiResponse
 from .models import Notification
 from .serializers import NotificationSerializer
 from .tasks import send_notification_email
@@ -16,12 +17,20 @@ class NotificationListView(generics.ListAPIView):
 
 class NotificationUnreadCountView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    
+    @extend_schema(
+        responses={200: OpenApiResponse(description="Unread count")}
+    )
     def get(self, request):
         count = Notification.objects.filter(user=request.user, is_read=False).count()
         return Response({'unread_count': count})
 
 class NotificationMarkReadView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    
+    @extend_schema(
+        responses={200: OpenApiResponse(description="Notification marked as read")}
+    )
     def patch(self, request, pk):
         notif = Notification.objects.get(pk=pk, user=request.user)
         notif.is_read = True
@@ -30,6 +39,10 @@ class NotificationMarkReadView(APIView):
 
 class NotificationMarkAllReadView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    
+    @extend_schema(
+        responses={200: OpenApiResponse(description="All notifications marked as read")}
+    )
     def patch(self, request):
         Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
         return Response({'detail': 'All notifications marked as read.'})
@@ -58,7 +71,22 @@ class SendNotificationView(APIView):
     Tags: Notifications
     """
     permission_classes = [permissions.IsAuthenticated]
+    serializer_class = NotificationSerializer
     
+    @extend_schema(
+        request={'application/json': {
+            'type': 'object',
+            'properties': {
+                'user_id': {'type': 'integer'},
+                'title': {'type': 'string'},
+                'message': {'type': 'string'},
+                'notification_type': {'type': 'string'},
+                'service_request_id': {'type': 'integer', 'nullable': True}
+            },
+            'required': ['user_id', 'title', 'message']
+        }},
+        responses={201: NotificationSerializer}
+    )
     def post(self, request):
         from apps.users.models import User
         from apps.users.permissions import IsAdmin

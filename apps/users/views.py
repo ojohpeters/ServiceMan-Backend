@@ -7,6 +7,7 @@ from django.urls import reverse
 from django.conf import settings
 from django.core.mail import send_mail
 from django.contrib.auth.tokens import default_token_generator
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 from .models import ClientProfile, ServicemanProfile, Skill
 from .serializers import (
     UserSerializer, RegisterSerializer,
@@ -64,6 +65,9 @@ class VerifyEmailView(APIView):
     """
     permission_classes = [permissions.AllowAny]
 
+    @extend_schema(
+        responses={200: OpenApiResponse(description="Email verified successfully")}
+    )
     def get(self, request):
         uid = request.GET.get('uid')
         token = request.GET.get('token')
@@ -87,6 +91,10 @@ class ResendVerificationEmailView(APIView):
     """
     permission_classes = [permissions.AllowAny]
 
+    @extend_schema(
+        request={'application/json': {'type': 'object', 'properties': {'email': {'type': 'string'}}}},
+        responses={200: OpenApiResponse(description="Verification email sent")}
+    )
     def post(self, request):
         email = request.data.get('email')
         if not email:
@@ -379,6 +387,10 @@ class CreateTestServicemenView(APIView):
     """
     permission_classes = [permissions.AllowAny]  # Only for development
     
+    @extend_schema(
+        request={'application/json': {'type': 'object', 'properties': {'category_id': {'type': 'integer'}}}},
+        responses={200: OpenApiResponse(description="Test servicemen created")}
+    )
     def post(self, request):
         from apps.services.models import Category
         
@@ -467,6 +479,10 @@ class PasswordResetRequestView(APIView):
     """
     permission_classes = [permissions.AllowAny]
     
+    @extend_schema(
+        request={'application/json': {'type': 'object', 'properties': {'email': {'type': 'string'}}}},
+        responses={200: OpenApiResponse(description="Password reset email sent")}
+    )
     def post(self, request):
         email = request.data.get('email')
         
@@ -494,6 +510,10 @@ class PasswordResetConfirmView(APIView):
     """
     permission_classes = [permissions.AllowAny]
     
+    @extend_schema(
+        request={'application/json': {'type': 'object', 'properties': {'password': {'type': 'string'}}}},
+        responses={200: OpenApiResponse(description="Password reset successfully")}
+    )
     def post(self, request):
         uid = request.GET.get('uid')
         token = request.GET.get('token')
@@ -541,6 +561,10 @@ class TestEmailView(APIView):
     """
     permission_classes = [permissions.AllowAny]  # Only for development
     
+    @extend_schema(
+        request={'application/json': {'type': 'object', 'properties': {'email': {'type': 'string'}}}},
+        responses={200: OpenApiResponse(description="Test email sent")}
+    )
     def post(self, request):
         # Test email configuration
         email = request.data.get('email', 'test@example.com')
@@ -664,6 +688,7 @@ class SkillDeleteView(generics.DestroyAPIView):
     Marks skill as inactive instead of deleting it.
     This preserves data integrity and historical records.
     """
+    serializer_class = SkillSerializer
     permission_classes = [IsAdmin]
     queryset = Skill.objects.all()
     
@@ -681,6 +706,7 @@ class ServicemanSkillsView(APIView):
     POST: Add skills to a serviceman (serviceman themselves or admin)
     DELETE: Remove skills from a serviceman (serviceman themselves or admin)
     """
+    serializer_class = SkillSerializer
     
     def get_permissions(self):
         if self.request.method == 'GET':
@@ -790,6 +816,16 @@ class AdminAssignServicemanCategoryView(APIView):
     """
     permission_classes = [IsAdmin]
     
+    @extend_schema(
+        request={'application/json': {
+            'type': 'object',
+            'properties': {
+                'serviceman_id': {'type': 'integer'},
+                'category_id': {'type': 'integer', 'nullable': True}
+            }
+        }},
+        responses={200: OpenApiResponse(description="Category assigned successfully")}
+    )
     def post(self, request):
         from apps.services.models import Category
         
@@ -874,6 +910,16 @@ class AdminBulkAssignCategoryView(APIView):
     """
     permission_classes = [IsAdmin]
     
+    @extend_schema(
+        request={'application/json': {
+            'type': 'object',
+            'properties': {
+                'serviceman_ids': {'type': 'array', 'items': {'type': 'integer'}},
+                'category_id': {'type': 'integer'}
+            }
+        }},
+        responses={200: OpenApiResponse(description="Servicemen assigned to category successfully")}
+    )
     def post(self, request):
         from apps.services.models import Category
         
@@ -955,7 +1001,11 @@ class AdminGetServicemenByCategoryView(APIView):
     Tags: Admin
     """
     permission_classes = [IsAdmin]
+    serializer_class = ServicemanProfileSerializer
     
+    @extend_schema(
+        responses={200: OpenApiResponse(description="Servicemen grouped by category")}
+    )
     def get(self, request):
         from apps.services.models import Category
         from django.db.models import Count
@@ -1083,6 +1133,18 @@ class AdminApproveServicemanView(APIView):
     """
     permission_classes = [IsAdmin]
     
+    @extend_schema(
+        request={'application/json': {
+            'type': 'object',
+            'properties': {
+                'serviceman_id': {'type': 'integer'},
+                'category_id': {'type': 'integer', 'nullable': True},
+                'notes': {'type': 'string'}
+            },
+            'required': ['serviceman_id']
+        }},
+        responses={200: OpenApiResponse(description="Serviceman approved successfully")}
+    )
     def post(self, request):
         from apps.services.models import Category
         from django.utils import timezone
@@ -1187,6 +1249,17 @@ class AdminRejectServicemanView(APIView):
     """
     permission_classes = [IsAdmin]
     
+    @extend_schema(
+        request={'application/json': {
+            'type': 'object',
+            'properties': {
+                'serviceman_id': {'type': 'integer'},
+                'rejection_reason': {'type': 'string'}
+            },
+            'required': ['serviceman_id', 'rejection_reason']
+        }},
+        responses={200: OpenApiResponse(description="Serviceman rejected")}
+    )
     def post(self, request):
         serviceman_id = request.data.get('serviceman_id')
         rejection_reason = request.data.get('rejection_reason', '')

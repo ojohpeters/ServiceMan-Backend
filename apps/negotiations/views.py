@@ -2,6 +2,7 @@ from rest_framework import generics, status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema, OpenApiResponse
 from .models import PriceNegotiation
 from .serializers import (
     PriceNegotiationSerializer, PriceNegotiationCreateSerializer
@@ -30,7 +31,11 @@ class NegotiationCreateView(generics.CreateAPIView):
 
 class NegotiationAcceptView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    serializer_class = PriceNegotiationSerializer
 
+    @extend_schema(
+        responses={200: PriceNegotiationSerializer}
+    )
     def post(self, request, pk):
         negotiation = get_object_or_404(PriceNegotiation, pk=pk)
         self.check_object_permissions(request, negotiation)
@@ -41,7 +46,18 @@ class NegotiationAcceptView(APIView):
 
 class NegotiationCounterView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    serializer_class = PriceNegotiationSerializer
 
+    @extend_schema(
+        request={'application/json': {
+            'type': 'object',
+            'properties': {
+                'proposed_amount': {'type': 'number'},
+                'message': {'type': 'string'}
+            }
+        }},
+        responses={200: PriceNegotiationSerializer}
+    )
     def post(self, request, pk):
         negotiation = get_object_or_404(PriceNegotiation, pk=pk)
         self.check_object_permissions(request, negotiation)

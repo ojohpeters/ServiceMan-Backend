@@ -82,6 +82,10 @@ class ServicemanProfileSerializer(serializers.ModelSerializer):
     )
     active_jobs_count = serializers.SerializerMethodField()
     availability_status = serializers.SerializerMethodField()
+    is_approved = serializers.SerializerMethodField()
+    approved_by = serializers.SerializerMethodField()
+    approved_at = serializers.SerializerMethodField()
+    rejection_reason = serializers.SerializerMethodField()
     
     class Meta:
         model = ServicemanProfile
@@ -96,7 +100,7 @@ class ServicemanProfileSerializer(serializers.ModelSerializer):
                           'availability_status', 'is_approved', 'approved_by', 'approved_at',
                           'rejection_reason', 'created_at', 'updated_at']
     
-    def get_skills(self, obj):
+    def get_skills(self, obj) -> list:
         """
         Safely get skills, return empty list if field doesn't exist yet.
         This prevents 500 errors when migrations haven't been run in production.
@@ -110,7 +114,7 @@ class ServicemanProfileSerializer(serializers.ModelSerializer):
             # If the skills table doesn't exist yet, return empty list
             return []
     
-    def get_active_jobs_count(self, obj):
+    def get_active_jobs_count(self, obj) -> int:
         """
         Get count of serviceman's active jobs (IN_PROGRESS status).
         """
@@ -127,7 +131,7 @@ class ServicemanProfileSerializer(serializers.ModelSerializer):
         except Exception:
             return 0
     
-    def get_availability_status(self, obj):
+    def get_availability_status(self, obj) -> dict:
         """
         Get human-readable availability status with context.
         """
@@ -148,6 +152,35 @@ class ServicemanProfileSerializer(serializers.ModelSerializer):
                 "active_jobs": active_jobs,
                 "warning": "Booking a busy serviceman may result in delayed service. Consider choosing an available serviceman or proceed if you prefer this specific serviceman."
             }
+    
+    def get_is_approved(self, obj) -> bool:
+        """Safely get approval status, default to True if field doesn't exist"""
+        try:
+            return getattr(obj, 'is_approved', True)
+        except Exception:
+            return True
+    
+    def get_approved_by(self, obj):
+        """Safely get approved_by field"""
+        try:
+            return getattr(obj, 'approved_by_id', None)
+        except Exception:
+            return None
+    
+    def get_approved_at(self, obj):
+        """Safely get approved_at field"""
+        try:
+            approved_at = getattr(obj, 'approved_at', None)
+            return approved_at.isoformat() if approved_at else None
+        except Exception:
+            return None
+    
+    def get_rejection_reason(self, obj) -> str:
+        """Safely get rejection_reason field"""
+        try:
+            return getattr(obj, 'rejection_reason', '')
+        except Exception:
+            return ''
     
     def update(self, instance, validated_data):
         # Handle skills update separately

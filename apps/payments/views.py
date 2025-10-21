@@ -3,6 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.conf import settings
+from drf_spectacular.utils import extend_schema, OpenApiResponse
 from .models import Payment
 from .serializers import PaymentSerializer
 from .paystack import initialize_payment, verify_payment
@@ -11,7 +12,19 @@ from django.utils import timezone
 
 class InitializePaymentView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    serializer_class = PaymentSerializer
 
+    @extend_schema(
+        request={'application/json': {
+            'type': 'object',
+            'properties': {
+                'service_request': {'type': 'integer'},
+                'payment_type': {'type': 'string'},
+                'amount': {'type': 'number'}
+            }
+        }},
+        responses={201: PaymentSerializer}
+    )
     def post(self, request):
         service_request_id = request.data.get('service_request')
         payment_type = request.data.get('payment_type')
@@ -44,6 +57,9 @@ class PaystackWebhookView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
 
+    @extend_schema(
+        exclude=True  # Exclude from API docs as it's only called by Paystack
+    )
     def post(self, request):
         from django.http import HttpResponseForbidden
         import hmac, hashlib
@@ -74,6 +90,11 @@ class PaystackWebhookView(APIView):
 
 class PaymentVerifyView(APIView):
     permission_classes = [permissions.AllowAny]
+    
+    @extend_schema(
+        request={'application/json': {'type': 'object', 'properties': {'reference': {'type': 'string'}}}},
+        responses={200: OpenApiResponse(description="Payment verification result")}
+    )
     def post(self, request):
         reference = request.data.get('reference')
         paystack_data = verify_payment(reference)

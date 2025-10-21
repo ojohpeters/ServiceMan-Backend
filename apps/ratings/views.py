@@ -2,6 +2,7 @@ from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db.models import Avg, Count
+from drf_spectacular.utils import extend_schema, OpenApiResponse
 from .models import Rating
 from .serializers import RatingSerializer
 from apps.services.models import ServiceRequest, Category
@@ -45,6 +46,10 @@ class RatingListView(generics.ListAPIView):
 
 class RevenueAnalyticsView(APIView):
     permission_classes = [permissions.IsAdminUser]
+    
+    @extend_schema(
+        responses={200: OpenApiResponse(description="Revenue analytics")}
+    )
     def get(self, request):
         from apps.payments.models import Payment
         from django.utils import timezone
@@ -57,6 +62,10 @@ class RevenueAnalyticsView(APIView):
 
 class TopServicemenAnalyticsView(APIView):
     permission_classes = [permissions.IsAdminUser]
+    
+    @extend_schema(
+        responses={200: OpenApiResponse(description="Top servicemen")}
+    )
     def get(self, request):
         servicemen = User.objects.filter(user_type="SERVICEMAN").order_by("-serviceman_profile__rating", "-serviceman_profile__total_jobs_completed")[:10]
         data = [
@@ -72,6 +81,10 @@ class TopServicemenAnalyticsView(APIView):
 
 class TopCategoriesAnalyticsView(APIView):
     permission_classes = [permissions.IsAdminUser]
+    
+    @extend_schema(
+        responses={200: OpenApiResponse(description="Top categories")}
+    )
     def get(self, request):
         qs = Category.objects.annotate(request_count=Count("servicerequest")).order_by("-request_count")[:10]
         data = [
