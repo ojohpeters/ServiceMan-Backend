@@ -283,12 +283,19 @@ class ServicemanProfileView(generics.RetrieveUpdateAPIView):
             if not profile:
                 logger.warning(f"ServicemanProfileView.get_object - Profile doesn't exist for user {self.request.user.id}, creating...")
                 
-                # Build creation kwargs with only existing fields
-                profile_data = {'user': self.request.user}
-                if 'is_approved' in existing_columns:
-                    profile_data['is_approved'] = False
+                # Create instance without saving
+                profile = ServicemanProfile(user=self.request.user)
                 
-                profile = ServicemanProfile.objects.create(**profile_data)
+                # Manually unset fields that don't exist in database
+                # This prevents Django from trying to INSERT them
+                for field in ['is_approved', 'approved_by', 'approved_at', 'rejection_reason']:
+                    if field not in existing_columns and hasattr(profile, field):
+                        # Remove the field from the instance's __dict__ so Django won't try to save it
+                        if field in profile.__dict__:
+                            del profile.__dict__[field]
+                
+                # Now save - Django will only INSERT fields that are in __dict__
+                profile.save()
                 logger.info(f"ServicemanProfileView.get_object - Profile created: {profile}")
             else:
                 logger.info(f"ServicemanProfileView.get_object - profile retrieved: {profile}")
