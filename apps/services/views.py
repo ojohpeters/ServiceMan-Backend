@@ -87,10 +87,21 @@ class CategoryServicemenListView(APIView):
             """)
             existing_columns = [row[0] for row in cursor.fetchall()]
         
+        # Determine which fields to defer
+        fields_to_defer = []
+        potential_new_fields = ['is_approved', 'approved_by_id', 'approved_at', 'rejection_reason']
+        
+        for field in potential_new_fields:
+            if field not in existing_columns:
+                # Don't add _id suffix for FK fields when deferring
+                defer_name = field.replace('_id', '') if field.endswith('_id') else field
+                fields_to_defer.append(defer_name)
+        
+        # Build queryset - don't use select_related yet
         servicemen = User.objects.filter(
             user_type='SERVICEMAN',
             serviceman_profile__category_id=pk
-        ).select_related('serviceman_profile').annotate(
+        ).annotate(
             active_jobs_count=Count(
                 Case(
                     When(
