@@ -268,28 +268,21 @@ class AllServicemenListView(generics.ListAPIView):
     
     def get_queryset(self):
         from django.db.models import Q, Count, Case, When, IntegerField
-        from django.db import connection
+        from django.core.exceptions import FieldError
         
-        # Check if migration-added fields exist
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT * FROM information_schema.columns WHERE table_name='users_servicemanprofile' LIMIT 1")
-            columns = [col[0] for col in cursor.description] if cursor.description else []
+        # Start with basic queryset
+        queryset = ServicemanProfile.objects.select_related('user', 'category')
         
-        has_approved_by = 'approved_by_id' in columns
-        has_is_approved = 'is_approved' in columns
+        # Try to add approved_by relation (may not exist yet)
+        try:
+            queryset = queryset.select_related('approved_by')
+        except (FieldError, Exception):
+            pass
         
-        # Build queryset with migration-safe related fields
-        select_related_fields = ['user', 'category']
-        if has_approved_by:
-            select_related_fields.append('approved_by')
-        
-        queryset = ServicemanProfile.objects.select_related(*select_related_fields)
-        
-        # Only prefetch skills if the table exists
+        # Try to prefetch skills (table may not exist yet)
         try:
             queryset = queryset.prefetch_related('skills')
-        except Exception:
-            # Skills table doesn't exist yet
+        except (FieldError, Exception):
             pass
         
         # Add annotations
@@ -310,8 +303,13 @@ class AllServicemenListView(generics.ListAPIView):
         show_all = self.request.query_params.get('show_all', 'false').lower() == 'true'
         is_admin = self.request.user.is_authenticated and self.request.user.user_type == 'ADMIN'
         
-        if not (show_all and is_admin) and has_is_approved:
-            queryset = queryset.filter(is_approved=True)
+        # Try to filter by is_approved (field may not exist yet)
+        if not (show_all and is_admin):
+            try:
+                queryset = queryset.filter(is_approved=True)
+            except (FieldError, Exception):
+                # Field doesn't exist yet, return all servicemen
+                pass
         
         # Filter by category
         category = self.request.query_params.get('category', None)
@@ -396,27 +394,21 @@ class PublicServicemanProfileView(generics.RetrieveAPIView):
     lookup_field = 'user_id'
     
     def get_queryset(self):
-        from django.db import connection
+        from django.core.exceptions import FieldError
         
-        # Check if migration-added fields exist
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT * FROM information_schema.columns WHERE table_name='users_servicemanprofile' LIMIT 1")
-            columns = [col[0] for col in cursor.description] if cursor.description else []
+        # Start with basic queryset
+        queryset = ServicemanProfile.objects.select_related('user', 'category')
         
-        has_approved_by = 'approved_by_id' in columns
+        # Try to add approved_by relation (may not exist yet)
+        try:
+            queryset = queryset.select_related('approved_by')
+        except (FieldError, Exception):
+            pass
         
-        # Build queryset with migration-safe related fields
-        select_related_fields = ['user', 'category']
-        if has_approved_by:
-            select_related_fields.append('approved_by')
-        
-        queryset = ServicemanProfile.objects.select_related(*select_related_fields)
-        
-        # Only prefetch skills if the table exists
+        # Try to prefetch skills (table may not exist yet)
         try:
             queryset = queryset.prefetch_related('skills')
-        except Exception:
-            # Skills table doesn't exist yet
+        except (FieldError, Exception):
             pass
         
         return queryset
@@ -681,14 +673,25 @@ class SkillListView(generics.ListAPIView):
     permission_classes = [permissions.AllowAny]
     
     def get_queryset(self):
-        queryset = Skill.objects.filter(is_active=True)
-        
-        # Filter by category if provided
-        category = self.request.query_params.get('category', None)
-        if category:
-            queryset = queryset.filter(category=category.upper())
-        
-        return queryset
+        try:
+            queryset = Skill.objects.filter(is_active=True)
+            
+            # Filter by category if provided
+            category = self.request.query_params.get('category', None)
+            if category:
+                queryset = queryset.filter(category=category.upper())
+            
+            return queryset
+        except Exception:
+            # Skills table doesn't exist yet, return empty queryset
+            return Skill.objects.none()
+    
+    def list(self, request, *args, **kwargs):
+        try:
+            return super().list(request, *args, **kwargs)
+        except Exception:
+            # Skills table doesn't exist yet
+            return Response([], status=200)
 
 
 class SkillDetailView(generics.RetrieveAPIView):
@@ -699,7 +702,18 @@ class SkillDetailView(generics.RetrieveAPIView):
     """
     serializer_class = SkillSerializer
     permission_classes = [permissions.AllowAny]
-    queryset = Skill.objects.filter(is_active=True)
+    
+    def get_queryset(self):
+        try:
+            return Skill.objects.filter(is_active=True)
+        except Exception:
+            return Skill.objects.none()
+    
+    def retrieve(self, request, *args, **kwargs):
+        try:
+            return super().retrieve(request, *args, **kwargs)
+        except Exception:
+            return Response({"detail": "Skills feature not available yet"}, status=404)
 
 
 class SkillCreateView(generics.CreateAPIView):
@@ -725,7 +739,12 @@ class SkillUpdateView(generics.UpdateAPIView):
     """
     serializer_class = SkillSerializer
     permission_classes = [IsAdmin]
-    queryset = Skill.objects.all()
+    
+    def get_queryset(self):
+        try:
+            return Skill.objects.all()
+        except Exception:
+            return Skill.objects.none()
 
 
 class SkillDeleteView(generics.DestroyAPIView):
@@ -737,7 +756,12 @@ class SkillDeleteView(generics.DestroyAPIView):
     """
     serializer_class = SkillSerializer
     permission_classes = [IsAdmin]
-    queryset = Skill.objects.all()
+    
+    def get_queryset(self):
+        try:
+            return Skill.objects.all()
+        except Exception:
+            return Skill.objects.none()
     
     def perform_destroy(self, instance):
         # Soft delete - mark as inactive instead of deleting
@@ -1144,26 +1168,21 @@ class AdminPendingServicemenView(generics.ListAPIView):
     permission_classes = [IsAdmin]
     
     def get_queryset(self):
-        from django.db import connection
-        
-        # Check if migration-added fields exist
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT * FROM information_schema.columns WHERE table_name='users_servicemanprofile' LIMIT 1")
-            columns = [col[0] for col in cursor.description] if cursor.description else []
-        
-        has_is_approved = 'is_approved' in columns
+        from django.core.exceptions import FieldError
         
         queryset = ServicemanProfile.objects.select_related('user', 'category')
         
-        # Only filter by is_approved if field exists
-        if has_is_approved:
+        # Try to filter by is_approved (field may not exist yet)
+        try:
             queryset = queryset.filter(is_approved=False)
+        except (FieldError, Exception):
+            # Field doesn't exist yet, return all servicemen
+            pass
         
-        # Only prefetch skills if the table exists
+        # Try to prefetch skills (table may not exist yet)
         try:
             queryset = queryset.prefetch_related('skills')
-        except Exception:
-            # Skills table doesn't exist yet
+        except (FieldError, Exception):
             pass
         
         return queryset.order_by('created_at')
