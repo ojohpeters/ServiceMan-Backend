@@ -268,10 +268,32 @@ class AllServicemenListView(generics.ListAPIView):
     
     def get_queryset(self):
         from django.db.models import Q, Count, Case, When, IntegerField
+        from django.db import connection
         
-        queryset = ServicemanProfile.objects.select_related(
-            'user', 'category', 'approved_by'
-        ).prefetch_related('skills').annotate(
+        # Check if migration-added fields exist
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM information_schema.columns WHERE table_name='users_servicemanprofile' LIMIT 1")
+            columns = [col[0] for col in cursor.description] if cursor.description else []
+        
+        has_approved_by = 'approved_by_id' in columns
+        has_is_approved = 'is_approved' in columns
+        
+        # Build queryset with migration-safe related fields
+        select_related_fields = ['user', 'category']
+        if has_approved_by:
+            select_related_fields.append('approved_by')
+        
+        queryset = ServicemanProfile.objects.select_related(*select_related_fields)
+        
+        # Only prefetch skills if the table exists
+        try:
+            queryset = queryset.prefetch_related('skills')
+        except Exception:
+            # Skills table doesn't exist yet
+            pass
+        
+        # Add annotations
+        queryset = queryset.annotate(
             active_jobs_count=Count(
                 Case(
                     When(
@@ -288,7 +310,7 @@ class AllServicemenListView(generics.ListAPIView):
         show_all = self.request.query_params.get('show_all', 'false').lower() == 'true'
         is_admin = self.request.user.is_authenticated and self.request.user.user_type == 'ADMIN'
         
-        if not (show_all and is_admin):
+        if not (show_all and is_admin) and has_is_approved:
             queryset = queryset.filter(is_approved=True)
         
         # Filter by category
@@ -371,8 +393,33 @@ class PublicServicemanProfileView(generics.RetrieveAPIView):
     """
     serializer_class = ServicemanProfileSerializer
     permission_classes = [permissions.AllowAny]
-    queryset = ServicemanProfile.objects.all()
     lookup_field = 'user_id'
+    
+    def get_queryset(self):
+        from django.db import connection
+        
+        # Check if migration-added fields exist
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM information_schema.columns WHERE table_name='users_servicemanprofile' LIMIT 1")
+            columns = [col[0] for col in cursor.description] if cursor.description else []
+        
+        has_approved_by = 'approved_by_id' in columns
+        
+        # Build queryset with migration-safe related fields
+        select_related_fields = ['user', 'category']
+        if has_approved_by:
+            select_related_fields.append('approved_by')
+        
+        queryset = ServicemanProfile.objects.select_related(*select_related_fields)
+        
+        # Only prefetch skills if the table exists
+        try:
+            queryset = queryset.prefetch_related('skills')
+        except Exception:
+            # Skills table doesn't exist yet
+            pass
+        
+        return queryset
 
 class CreateTestServicemenView(APIView):
     """
@@ -1097,9 +1144,29 @@ class AdminPendingServicemenView(generics.ListAPIView):
     permission_classes = [IsAdmin]
     
     def get_queryset(self):
-        return ServicemanProfile.objects.filter(
-            is_approved=False
-        ).select_related('user', 'category').prefetch_related('skills').order_by('created_at')
+        from django.db import connection
+        
+        # Check if migration-added fields exist
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM information_schema.columns WHERE table_name='users_servicemanprofile' LIMIT 1")
+            columns = [col[0] for col in cursor.description] if cursor.description else []
+        
+        has_is_approved = 'is_approved' in columns
+        
+        queryset = ServicemanProfile.objects.select_related('user', 'category')
+        
+        # Only filter by is_approved if field exists
+        if has_is_approved:
+            queryset = queryset.filter(is_approved=False)
+        
+        # Only prefetch skills if the table exists
+        try:
+            queryset = queryset.prefetch_related('skills')
+        except Exception:
+            # Skills table doesn't exist yet
+            pass
+        
+        return queryset.order_by('created_at')
     
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
