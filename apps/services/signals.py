@@ -105,8 +105,30 @@ def log_manual_availability_change(sender, instance, **kwargs):
     """Log when serviceman manually changes their availability"""
     if instance.pk:
         try:
-            old_instance = sender.objects.get(pk=instance.pk)
-            if old_instance.is_available != instance.is_available:
+            from django.db import connection
+            
+            # Check which fields exist before fetching old instance
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name='users_servicemanprofile'
+                """)
+                existing_columns = [row[0] for row in cursor.fetchall()]
+            
+            # Defer non-existent fields when fetching old instance
+            fields_to_defer = []
+            for field in ['is_approved', 'approved_by_id', 'approved_at', 'rejection_reason']:
+                if field not in existing_columns:
+                    defer_name = field.replace('_id', '') if field.endswith('_id') else field
+                    fields_to_defer.append(defer_name)
+            
+            queryset = sender.objects.filter(pk=instance.pk)
+            if fields_to_defer:
+                queryset = queryset.defer(*fields_to_defer)
+            
+            old_instance = queryset.first()
+            if old_instance and old_instance.is_available != instance.is_available:
                 # Check if this is a manual change (not from auto-update)
                 active_jobs = ServiceRequest.objects.filter(
                     Q(serviceman=instance.user) | Q(backup_serviceman=instance.user),
