@@ -269,22 +269,38 @@ class AllServicemenListView(generics.ListAPIView):
     def get_queryset(self):
         from django.db.models import Q, Count, Case, When, IntegerField
         from django.core.exceptions import FieldError
+        from django.db import connection
         
-        # Start with absolute minimum queryset - just ServicemanProfile objects
-        # Don't use select_related or prefetch_related yet - let serializer handle it
+        # Check which fields exist in the database
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='users_servicemanprofile'
+            """)
+            existing_columns = [row[0] for row in cursor.fetchall()]
+        
+        # Start with basic queryset
         queryset = ServicemanProfile.objects.all()
+        
+        # Defer fields that don't exist yet
+        fields_to_defer = []
+        potential_new_fields = ['is_approved', 'approved_by_id', 'approved_at', 'rejection_reason']
+        
+        for field in potential_new_fields:
+            if field not in existing_columns:
+                fields_to_defer.append(field.replace('_id', ''))  # approved_by_id -> approved_by
+        
+        if fields_to_defer:
+            queryset = queryset.defer(*fields_to_defer)
         
         # By default, show only approved servicemen (unless admin wants to see all)
         show_all = self.request.query_params.get('show_all', 'false').lower() == 'true'
         is_admin = self.request.user.is_authenticated and self.request.user.user_type == 'ADMIN'
         
-        # Try to filter by is_approved (field may not exist yet)
-        if not (show_all and is_admin):
-            try:
-                queryset = queryset.filter(is_approved=True)
-            except (FieldError, Exception):
-                # Field doesn't exist yet, return all servicemen
-                pass
+        # Try to filter by is_approved (only if field exists)
+        if not (show_all and is_admin) and 'is_approved' in existing_columns:
+            queryset = queryset.filter(is_approved=True)
         
         # Filter by category
         category = self.request.query_params.get('category', None)
@@ -370,10 +386,32 @@ class PublicServicemanProfileView(generics.RetrieveAPIView):
     
     def get_queryset(self):
         from django.core.exceptions import FieldError
+        from django.db import connection
         
-        # Start with basic queryset - NO select_related or prefetch_related at all
-        # Let the serializer handle everything safely
-        return ServicemanProfile.objects.all()
+        # Check which fields exist in the database
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='users_servicemanprofile'
+            """)
+            existing_columns = [row[0] for row in cursor.fetchall()]
+        
+        # Start with basic queryset
+        queryset = ServicemanProfile.objects.all()
+        
+        # Defer fields that don't exist yet
+        fields_to_defer = []
+        potential_new_fields = ['is_approved', 'approved_by_id', 'approved_at', 'rejection_reason']
+        
+        for field in potential_new_fields:
+            if field not in existing_columns:
+                fields_to_defer.append(field.replace('_id', ''))  # approved_by_id -> approved_by
+        
+        if fields_to_defer:
+            queryset = queryset.defer(*fields_to_defer)
+        
+        return queryset
     
     def retrieve(self, request, *args, **kwargs):
         try:
@@ -1145,16 +1183,34 @@ class AdminPendingServicemenView(generics.ListAPIView):
     
     def get_queryset(self):
         from django.core.exceptions import FieldError
+        from django.db import connection
         
-        # Start with basic queryset - NO relations, let serializer handle it
+        # Check which fields exist in the database
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='users_servicemanprofile'
+            """)
+            existing_columns = [row[0] for row in cursor.fetchall()]
+        
+        # Start with basic queryset
         queryset = ServicemanProfile.objects.all()
         
-        # Try to filter by is_approved (field may not exist yet)
-        try:
+        # Defer fields that don't exist yet
+        fields_to_defer = []
+        potential_new_fields = ['is_approved', 'approved_by_id', 'approved_at', 'rejection_reason']
+        
+        for field in potential_new_fields:
+            if field not in existing_columns:
+                fields_to_defer.append(field.replace('_id', ''))  # approved_by_id -> approved_by
+        
+        if fields_to_defer:
+            queryset = queryset.defer(*fields_to_defer)
+        
+        # Try to filter by is_approved (only if field exists)
+        if 'is_approved' in existing_columns:
             queryset = queryset.filter(is_approved=False)
-        except (FieldError, Exception):
-            # Field doesn't exist yet, return all servicemen
-            pass
         
         return queryset.order_by('created_at')
     
