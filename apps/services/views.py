@@ -76,6 +76,16 @@ class CategoryServicemenListView(APIView):
     )
     def get(self, request, pk):
         from django.db.models import Q, Count, Case, When, IntegerField
+        from django.db import connection
+        
+        # Check which fields exist in the database
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='users_servicemanprofile'
+            """)
+            existing_columns = [row[0] for row in cursor.fetchall()]
         
         servicemen = User.objects.filter(
             user_type='SERVICEMAN',
@@ -91,14 +101,21 @@ class CategoryServicemenListView(APIView):
                     output_field=IntegerField()
                 )
             )
-        ).order_by('-serviceman_profile__is_available', '-serviceman_profile__rating')
+        )
+        
+        # Only order by is_available if field exists
+        if 'is_available' in existing_columns:
+            servicemen = servicemen.order_by('-serviceman_profile__is_available', '-serviceman_profile__rating')
+        else:
+            servicemen = servicemen.order_by('-serviceman_profile__rating')
         
         data = []
         available_count = 0
         busy_count = 0
         
         for s in servicemen:
-            is_available = s.serviceman_profile.is_available
+            # Safely get is_available (may not exist in database yet)
+            is_available = getattr(s.serviceman_profile, 'is_available', True)
             active_jobs = s.active_jobs_count
             
             if is_available:
