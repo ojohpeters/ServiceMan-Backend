@@ -278,7 +278,20 @@ class ServicemanProfileView(generics.RetrieveUpdateAPIView):
             
             logger.info(f"ServicemanProfileView.get_object - executing query for user {self.request.user.id}")
             profile = queryset.first()
-            logger.info(f"ServicemanProfileView.get_object - profile retrieved: {profile}")
+            
+            # If profile doesn't exist, create it
+            if not profile:
+                logger.warning(f"ServicemanProfileView.get_object - Profile doesn't exist for user {self.request.user.id}, creating...")
+                
+                # Build creation kwargs with only existing fields
+                profile_data = {'user': self.request.user}
+                if 'is_approved' in existing_columns:
+                    profile_data['is_approved'] = False
+                
+                profile = ServicemanProfile.objects.create(**profile_data)
+                logger.info(f"ServicemanProfileView.get_object - Profile created: {profile}")
+            else:
+                logger.info(f"ServicemanProfileView.get_object - profile retrieved: {profile}")
             
             return profile
             
