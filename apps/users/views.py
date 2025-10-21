@@ -270,34 +270,9 @@ class AllServicemenListView(generics.ListAPIView):
         from django.db.models import Q, Count, Case, When, IntegerField
         from django.core.exceptions import FieldError
         
-        # Start with basic queryset
-        queryset = ServicemanProfile.objects.select_related('user', 'category')
-        
-        # Try to add approved_by relation (may not exist yet)
-        try:
-            queryset = queryset.select_related('approved_by')
-        except (FieldError, Exception):
-            pass
-        
-        # Try to prefetch skills (table may not exist yet)
-        try:
-            queryset = queryset.prefetch_related('skills')
-        except (FieldError, Exception):
-            pass
-        
-        # Add annotations
-        queryset = queryset.annotate(
-            active_jobs_count=Count(
-                Case(
-                    When(
-                        Q(user__serviceman_requests__status='IN_PROGRESS', user__serviceman_requests__is_deleted=False) |
-                        Q(user__backup_requests__status='IN_PROGRESS', user__backup_requests__is_deleted=False),
-                        then=1
-                    ),
-                    output_field=IntegerField()
-                )
-            )
-        )
+        # Start with absolute minimum queryset - just ServicemanProfile objects
+        # Don't use select_related or prefetch_related yet - let serializer handle it
+        queryset = ServicemanProfile.objects.all()
         
         # By default, show only approved servicemen (unless admin wants to see all)
         show_all = self.request.query_params.get('show_all', 'false').lower() == 'true'
@@ -396,22 +371,23 @@ class PublicServicemanProfileView(generics.RetrieveAPIView):
     def get_queryset(self):
         from django.core.exceptions import FieldError
         
-        # Start with basic queryset
-        queryset = ServicemanProfile.objects.select_related('user', 'category')
-        
-        # Try to add approved_by relation (may not exist yet)
+        # Start with basic queryset - NO select_related or prefetch_related at all
+        # Let the serializer handle everything safely
+        return ServicemanProfile.objects.all()
+    
+    def retrieve(self, request, *args, **kwargs):
         try:
-            queryset = queryset.select_related('approved_by')
-        except (FieldError, Exception):
-            pass
-        
-        # Try to prefetch skills (table may not exist yet)
-        try:
-            queryset = queryset.prefetch_related('skills')
-        except (FieldError, Exception):
-            pass
-        
-        return queryset
+            instance = self.get_object()
+            serializer = self.get_serializer(instance)
+            return Response(serializer.data)
+        except Exception as e:
+            # Log the error for debugging
+            import traceback
+            traceback.print_exc()
+            return Response(
+                {"detail": f"Error retrieving serviceman profile: {str(e)}"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class CreateTestServicemenView(APIView):
     """
@@ -1170,19 +1146,14 @@ class AdminPendingServicemenView(generics.ListAPIView):
     def get_queryset(self):
         from django.core.exceptions import FieldError
         
-        queryset = ServicemanProfile.objects.select_related('user', 'category')
+        # Start with basic queryset - NO relations, let serializer handle it
+        queryset = ServicemanProfile.objects.all()
         
         # Try to filter by is_approved (field may not exist yet)
         try:
             queryset = queryset.filter(is_approved=False)
         except (FieldError, Exception):
             # Field doesn't exist yet, return all servicemen
-            pass
-        
-        # Try to prefetch skills (table may not exist yet)
-        try:
-            queryset = queryset.prefetch_related('skills')
-        except (FieldError, Exception):
             pass
         
         return queryset.order_by('created_at')
