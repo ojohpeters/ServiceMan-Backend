@@ -243,31 +243,95 @@ class ServicemanProfileView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         from django.db import connection
+        import logging
+        import traceback
         
-        # Check which fields exist in the database
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name='users_servicemanprofile'
-            """)
-            existing_columns = [row[0] for row in cursor.fetchall()]
+        logger = logging.getLogger(__name__)
         
-        # Determine which fields to defer
-        fields_to_defer = []
-        potential_new_fields = ['is_approved', 'approved_by_id', 'approved_at', 'rejection_reason']
+        try:
+            # Check which fields exist in the database
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name='users_servicemanprofile'
+                """)
+                existing_columns = [row[0] for row in cursor.fetchall()]
+            
+            logger.info(f"ServicemanProfileView.get_object - existing columns: {existing_columns}")
+            
+            # Determine which fields to defer
+            fields_to_defer = []
+            potential_new_fields = ['is_approved', 'approved_by_id', 'approved_at', 'rejection_reason']
+            
+            for field in potential_new_fields:
+                if field not in existing_columns:
+                    defer_name = field.replace('_id', '') if field.endswith('_id') else field
+                    fields_to_defer.append(defer_name)
+            
+            logger.info(f"ServicemanProfileView.get_object - fields to defer: {fields_to_defer}")
+            
+            # Get profile with deferred fields
+            queryset = ServicemanProfile.objects.filter(user=self.request.user)
+            if fields_to_defer:
+                queryset = queryset.defer(*fields_to_defer)
+            
+            logger.info(f"ServicemanProfileView.get_object - executing query for user {self.request.user.id}")
+            profile = queryset.first()
+            logger.info(f"ServicemanProfileView.get_object - profile retrieved: {profile}")
+            
+            return profile
+            
+        except Exception as e:
+            logger.error(f"ServicemanProfileView.get_object - ERROR: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise
+    
+    def update(self, request, *args, **kwargs):
+        import logging
+        import traceback
         
-        for field in potential_new_fields:
-            if field not in existing_columns:
-                defer_name = field.replace('_id', '') if field.endswith('_id') else field
-                fields_to_defer.append(defer_name)
+        logger = logging.getLogger(__name__)
         
-        # Get profile with deferred fields
-        queryset = ServicemanProfile.objects.filter(user=self.request.user)
-        if fields_to_defer:
-            queryset = queryset.defer(*fields_to_defer)
+        try:
+            logger.info(f"ServicemanProfileView.update - starting update for user {request.user.id}")
+            logger.info(f"ServicemanProfileView.update - request data: {request.data}")
+            return super().update(request, *args, **kwargs)
+        except Exception as e:
+            logger.error(f"ServicemanProfileView.update - ERROR: {str(e)}")
+            logger.error(traceback.format_exc())
+            from rest_framework.response import Response
+            return Response(
+                {
+                    "error": "Update failed",
+                    "detail": str(e),
+                    "traceback": traceback.format_exc()
+                },
+                status=500
+            )
+    
+    def partial_update(self, request, *args, **kwargs):
+        import logging
+        import traceback
         
-        return queryset.first()
+        logger = logging.getLogger(__name__)
+        
+        try:
+            logger.info(f"ServicemanProfileView.partial_update - starting for user {request.user.id}")
+            logger.info(f"ServicemanProfileView.partial_update - request data: {request.data}")
+            return super().partial_update(request, *args, **kwargs)
+        except Exception as e:
+            logger.error(f"ServicemanProfileView.partial_update - ERROR: {str(e)}")
+            logger.error(traceback.format_exc())
+            from rest_framework.response import Response
+            return Response(
+                {
+                    "error": "Partial update failed",
+                    "detail": str(e),
+                    "traceback": traceback.format_exc()
+                },
+                status=500
+            )
 
 class AllServicemenListView(generics.ListAPIView):
     """
