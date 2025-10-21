@@ -77,118 +77,132 @@ class CategoryServicemenListView(APIView):
     def get(self, request, pk):
         from django.db.models import Q, Count, Case, When, IntegerField
         from django.db import connection
+        import traceback
+        import logging
         
-        # Check which fields exist in the database
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name='users_servicemanprofile'
-            """)
-            existing_columns = [row[0] for row in cursor.fetchall()]
+        logger = logging.getLogger(__name__)
         
-        # Determine which fields to defer
-        fields_to_defer = []
-        potential_new_fields = ['is_approved', 'approved_by_id', 'approved_at', 'rejection_reason']
-        
-        for field in potential_new_fields:
-            if field not in existing_columns:
-                # Don't add _id suffix for FK fields when deferring
-                defer_name = field.replace('_id', '') if field.endswith('_id') else field
-                fields_to_defer.append(defer_name)
-        
-        # Build queryset - don't use select_related yet
-        servicemen = User.objects.filter(
-            user_type='SERVICEMAN',
-            serviceman_profile__category_id=pk
-        ).annotate(
-            active_jobs_count=Count(
-                Case(
-                    When(
-                        Q(serviceman_requests__status='IN_PROGRESS', serviceman_requests__is_deleted=False) |
-                        Q(backup_requests__status='IN_PROGRESS', backup_requests__is_deleted=False),
-                        then=1
-                    ),
-                    output_field=IntegerField()
+        try:
+            # Check which fields exist in the database
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name='users_servicemanprofile'
+                """)
+                existing_columns = [row[0] for row in cursor.fetchall()]
+            
+            logger.info(f"Existing columns in users_servicemanprofile: {existing_columns}")
+            
+            # Build queryset - no filtering, no select_related
+            servicemen = User.objects.filter(
+                user_type='SERVICEMAN',
+                serviceman_profile__category_id=pk
+            ).annotate(
+                active_jobs_count=Count(
+                    Case(
+                        When(
+                            Q(serviceman_requests__status='IN_PROGRESS', serviceman_requests__is_deleted=False) |
+                            Q(backup_requests__status='IN_PROGRESS', backup_requests__is_deleted=False),
+                            then=1
+                        ),
+                        output_field=IntegerField()
+                    )
                 )
             )
-        )
-        
-        # Only order by is_available if field exists
-        if 'is_available' in existing_columns:
-            servicemen = servicemen.order_by('-serviceman_profile__is_available', '-serviceman_profile__rating')
-        else:
+            
+            # Simple order by rating only (avoid is_available for now)
             servicemen = servicemen.order_by('-serviceman_profile__rating')
-        
-        data = []
-        available_count = 0
-        busy_count = 0
-        
-        for s in servicemen:
-            # Safely get is_available (may not exist in database yet)
-            is_available = getattr(s.serviceman_profile, 'is_available', True)
-            active_jobs = s.active_jobs_count
             
-            if is_available:
-                available_count += 1
+            logger.info(f"Queryset created, count: {servicemen.count()}")
+            
+            data = []
+            available_count = 0
+            busy_count = 0
+            
+            for s in servicemen:
+                try:
+                    # Safely get is_available (may not exist in database yet)
+                    is_available = getattr(s.serviceman_profile, 'is_available', True)
+                    active_jobs = s.active_jobs_count
+                    
+                    if is_available:
+                        available_count += 1
+                    else:
+                        busy_count += 1
+                    
+                    serviceman_data = {
+                        "id": s.id,
+                        "full_name": s.get_full_name() or s.username,
+                        "username": s.username,
+                        "rating": float(s.serviceman_profile.rating),
+                        "total_jobs_completed": s.serviceman_profile.total_jobs_completed,
+                        "bio": s.serviceman_profile.bio,
+                        "years_of_experience": s.serviceman_profile.years_of_experience,
+                        "is_available": is_available,
+                        "active_jobs_count": active_jobs,
+                        "availability_status": {
+                            "status": "available" if is_available else "busy",
+                            "label": "Available" if is_available else "Currently Busy",
+                            "badge_color": "green" if is_available else "orange"
+                        }
+                    }
+                    
+                    # Add warning if busy
+                    if not is_available:
+                        serviceman_data["booking_warning"] = {
+                            "message": f"This serviceman is currently working on {active_jobs} active job(s)",
+                            "recommendation": "Consider choosing an available serviceman for faster service",
+                            "can_still_book": True,
+                            "estimated_delay": "Service may be delayed" if active_jobs > 1 else "Minor delay possible"
+                        }
+                    
+                    data.append(serviceman_data)
+                except Exception as e:
+                    logger.error(f"Error processing serviceman {s.id}: {str(e)}")
+                    logger.error(traceback.format_exc())
+                    # Skip this serviceman and continue
+                    continue
+            
+            # Build response with summary
+            response_data = {
+                "category_id": pk,
+                "total_servicemen": len(data),
+                "available_servicemen": available_count,
+                "busy_servicemen": busy_count,
+                "servicemen": data
+            }
+            
+            # Add overall availability message
+            if available_count == 0:
+                response_data["availability_message"] = {
+                    "type": "warning",
+                    "message": f"All {busy_count} servicemen in this category are currently busy. You can still book, but please expect potential delays."
+                }
+            elif available_count < busy_count:
+                response_data["availability_message"] = {
+                    "type": "info",
+                    "message": f"{available_count} available, {busy_count} busy. Choose available servicemen for immediate service."
+                }
             else:
-                busy_count += 1
-            
-            serviceman_data = {
-                "id": s.id,
-                "full_name": s.get_full_name() or s.username,
-                "username": s.username,
-                "rating": float(s.serviceman_profile.rating),
-                "total_jobs_completed": s.serviceman_profile.total_jobs_completed,
-                "bio": s.serviceman_profile.bio,
-                "years_of_experience": s.serviceman_profile.years_of_experience,
-                "is_available": is_available,
-                "active_jobs_count": active_jobs,
-                "availability_status": {
-                    "status": "available" if is_available else "busy",
-                    "label": "Available" if is_available else "Currently Busy",
-                    "badge_color": "green" if is_available else "orange"
-                }
-            }
-            
-            # Add warning if busy
-            if not is_available:
-                serviceman_data["booking_warning"] = {
-                    "message": f"This serviceman is currently working on {active_jobs} active job(s)",
-                    "recommendation": "Consider choosing an available serviceman for faster service",
-                    "can_still_book": True,
-                    "estimated_delay": "Service may be delayed" if active_jobs > 1 else "Minor delay possible"
+                response_data["availability_message"] = {
+                    "type": "success",
+                    "message": f"{available_count} servicemen are available for immediate service."
                 }
             
-            data.append(serviceman_data)
-        
-        # Build response with summary
-        response_data = {
-            "category_id": pk,
-            "total_servicemen": len(data),
-            "available_servicemen": available_count,
-            "busy_servicemen": busy_count,
-            "servicemen": data
-        }
-        
-        # Add overall availability message
-        if available_count == 0:
-            response_data["availability_message"] = {
-                "type": "warning",
-                "message": f"All {busy_count} servicemen in this category are currently busy. You can still book, but please expect potential delays."
-            }
-        elif available_count < busy_count:
-            response_data["availability_message"] = {
-                "type": "info",
-                "message": f"{available_count} available, {busy_count} busy. Choose available servicemen for immediate service."
-            }
-        else:
-            response_data["availability_message"] = {
-                "type": "success",
-                "message": f"{available_count} servicemen are available for immediate service."
-            }
-        
-        return Response(response_data)
+            return Response(response_data)
+            
+        except Exception as e:
+            logger.error(f"Error in CategoryServicemenListView: {str(e)}")
+            logger.error(traceback.format_exc())
+            return Response(
+                {
+                    "error": "Internal server error",
+                    "detail": str(e),
+                    "traceback": traceback.format_exc()
+                },
+                status=500
+            )
 
 # --- ServiceRequest Views ---
 
