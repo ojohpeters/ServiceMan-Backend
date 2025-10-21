@@ -283,19 +283,45 @@ class ServicemanProfileView(generics.RetrieveUpdateAPIView):
             if not profile:
                 logger.warning(f"ServicemanProfileView.get_object - Profile doesn't exist for user {self.request.user.id}, creating...")
                 
-                # Create instance without saving
-                profile = ServicemanProfile(user=self.request.user)
+                # Use raw SQL to insert only existing columns
+                from django.db import connection
                 
-                # Manually unset fields that don't exist in database
-                # This prevents Django from trying to INSERT them
-                for field in ['is_approved', 'approved_by', 'approved_at', 'rejection_reason']:
-                    if field not in existing_columns and hasattr(profile, field):
-                        # Remove the field from the instance's __dict__ so Django won't try to save it
-                        if field in profile.__dict__:
-                            del profile.__dict__[field]
+                # Get all fields that should have default values
+                insert_fields = ['user_id']
+                insert_values = [self.request.user.id]
                 
-                # Now save - Django will only INSERT fields that are in __dict__
-                profile.save()
+                # Add fields that exist in database with their defaults
+                field_defaults = {
+                    'rating': '0.00',
+                    'total_jobs_completed': 0,
+                    'bio': '',
+                    'years_of_experience': 0,
+                    'phone_number': '',
+                    'is_available': True,
+                }
+                
+                for field, default_value in field_defaults.items():
+                    if field in existing_columns:
+                        insert_fields.append(field)
+                        insert_values.append(default_value)
+                
+                # Build and execute INSERT statement
+                placeholders = ', '.join(['%s'] * len(insert_values))
+                fields_str = ', '.join(insert_fields)
+                
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        f"INSERT INTO users_servicemanprofile ({fields_str}) VALUES ({placeholders}) RETURNING id",
+                        insert_values
+                    )
+                    profile_id = cursor.fetchone()[0]
+                
+                # Fetch the created profile with deferred fields
+                profile = ServicemanProfile.objects.filter(id=profile_id)
+                if fields_to_defer:
+                    profile = profile.defer(*fields_to_defer)
+                profile = profile.first()
+                
                 logger.info(f"ServicemanProfileView.get_object - Profile created: {profile}")
             else:
                 logger.info(f"ServicemanProfileView.get_object - profile retrieved: {profile}")
