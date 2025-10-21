@@ -94,10 +94,31 @@ class CategoryServicemenListView(APIView):
             
             logger.info(f"Existing columns in users_servicemanprofile: {existing_columns}")
             
-            # Build queryset - no filtering, no select_related
+            # Determine which fields to defer from ServicemanProfile
+            from django.db.models import Prefetch
+            from apps.users.models import ServicemanProfile
+            
+            fields_to_defer = []
+            potential_new_fields = ['is_approved', 'approved_by_id', 'approved_at', 'rejection_reason']
+            
+            for field in potential_new_fields:
+                if field not in existing_columns:
+                    defer_name = field.replace('_id', '') if field.endswith('_id') else field
+                    fields_to_defer.append(defer_name)
+            
+            logger.info(f"Fields to defer: {fields_to_defer}")
+            
+            # Build ServicemanProfile queryset with deferred fields
+            profile_qs = ServicemanProfile.objects.all()
+            if fields_to_defer:
+                profile_qs = profile_qs.defer(*fields_to_defer)
+            
+            # Build queryset with safe prefetch
             servicemen = User.objects.filter(
                 user_type='SERVICEMAN',
                 serviceman_profile__category_id=pk
+            ).prefetch_related(
+                Prefetch('serviceman_profile', queryset=profile_qs)
             ).annotate(
                 active_jobs_count=Count(
                     Case(
@@ -111,8 +132,8 @@ class CategoryServicemenListView(APIView):
                 )
             )
             
-            # Simple order by rating only (avoid is_available for now)
-            servicemen = servicemen.order_by('-serviceman_profile__rating')
+            # Simple order - avoid ordering by deferred fields
+            servicemen = servicemen.order_by('id')
             
             logger.info(f"Queryset created, count: {servicemen.count()}")
             
