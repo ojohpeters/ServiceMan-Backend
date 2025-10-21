@@ -242,7 +242,32 @@ class ServicemanProfileView(generics.RetrieveUpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
-        return self.request.user.serviceman_profile
+        from django.db import connection
+        
+        # Check which fields exist in the database
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='users_servicemanprofile'
+            """)
+            existing_columns = [row[0] for row in cursor.fetchall()]
+        
+        # Determine which fields to defer
+        fields_to_defer = []
+        potential_new_fields = ['is_approved', 'approved_by_id', 'approved_at', 'rejection_reason']
+        
+        for field in potential_new_fields:
+            if field not in existing_columns:
+                defer_name = field.replace('_id', '') if field.endswith('_id') else field
+                fields_to_defer.append(defer_name)
+        
+        # Get profile with deferred fields
+        queryset = ServicemanProfile.objects.filter(user=self.request.user)
+        if fields_to_defer:
+            queryset = queryset.defer(*fields_to_defer)
+        
+        return queryset.first()
 
 class AllServicemenListView(generics.ListAPIView):
     """
