@@ -285,12 +285,14 @@ class ServicemanProfileView(generics.RetrieveUpdateAPIView):
                 
                 # Use raw SQL to insert only existing columns
                 from django.db import connection
+                from django.utils import timezone
                 
                 # Get all fields that should have default values
                 insert_fields = ['user_id']
                 insert_values = [self.request.user.id]
                 
                 # Add fields that exist in database with their defaults
+                now = timezone.now()
                 field_defaults = {
                     'rating': '0.00',
                     'total_jobs_completed': 0,
@@ -298,6 +300,8 @@ class ServicemanProfileView(generics.RetrieveUpdateAPIView):
                     'years_of_experience': 0,
                     'phone_number': '',
                     'is_available': True,
+                    'created_at': now,
+                    'updated_at': now,
                 }
                 
                 for field, default_value in field_defaults.items():
