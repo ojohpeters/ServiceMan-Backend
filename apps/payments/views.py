@@ -10,6 +10,10 @@ from .paystack import initialize_payment, verify_payment
 from apps.services.models import ServiceRequest
 from django.utils import timezone
 from decimal import Decimal
+import logging
+import traceback
+
+logger = logging.getLogger(__name__)
 
 # Booking fee constants
 NORMAL_BOOKING_FEE = Decimal('2000.00')
@@ -49,27 +53,48 @@ class InitializeBookingFeeView(APIView):
     )
     def post(self, request):
         """Initialize booking fee payment"""
-        is_emergency = request.data.get('is_emergency', False)
-        
-        # Calculate booking fee
-        amount = EMERGENCY_BOOKING_FEE if is_emergency else NORMAL_BOOKING_FEE
-        
-        # Generate unique reference
-        timestamp = timezone.now().timestamp()
-        reference = f"BOOKING-{request.user.id}-{timestamp}"
-        
-        # Initialize Paystack payment
-        callback_url = settings.FRONTEND_URL + "/payment/booking-callback"
-        
         try:
+            logger.info(f"[InitializeBookingFee] Request received from user {request.user.id}")
+            logger.info(f"[InitializeBookingFee] Request data: {request.data}")
+            
+            is_emergency = request.data.get('is_emergency', False)
+            logger.info(f"[InitializeBookingFee] is_emergency: {is_emergency}")
+            
+            # Calculate booking fee
+            amount = EMERGENCY_BOOKING_FEE if is_emergency else NORMAL_BOOKING_FEE
+            logger.info(f"[InitializeBookingFee] Calculated amount: {amount}")
+            
+            # Generate unique reference
+            timestamp = timezone.now().timestamp()
+            reference = f"BOOKING-{request.user.id}-{timestamp}"
+            logger.info(f"[InitializeBookingFee] Generated reference: {reference}")
+            
+            # Check FRONTEND_URL setting
+            frontend_url = getattr(settings, 'FRONTEND_URL', None)
+            logger.info(f"[InitializeBookingFee] FRONTEND_URL: {frontend_url}")
+            
+            if not frontend_url:
+                logger.error("[InitializeBookingFee] FRONTEND_URL not configured in settings")
+                return Response({
+                    "error": "Server configuration error",
+                    "detail": "FRONTEND_URL is not configured"
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            # Initialize Paystack payment
+            callback_url = frontend_url + "/payment/booking-callback"
+            logger.info(f"[InitializeBookingFee] Callback URL: {callback_url}")
+            
+            logger.info(f"[InitializeBookingFee] Calling Paystack initialize_payment...")
             paystack_data = initialize_payment(
                 amount=amount,
                 email=request.user.email,
                 reference=reference,
                 callback_url=callback_url
             )
+            logger.info(f"[InitializeBookingFee] Paystack response: {paystack_data}")
             
             # Create payment record (without service_request yet)
+            logger.info(f"[InitializeBookingFee] Creating Payment record...")
             payment = Payment.objects.create(
                 service_request=None,  # Will be linked when service request is created
                 payment_type='INITIAL_BOOKING',
@@ -79,8 +104,11 @@ class InitializeBookingFeeView(APIView):
                 status='PENDING',
                 is_emergency=is_emergency
             )
+            logger.info(f"[InitializeBookingFee] Payment record created: ID={payment.id}")
             
             serializer = PaymentSerializer(payment)
+            logger.info(f"[InitializeBookingFee] Success! Returning response")
+            
             return Response({
                 "payment": serializer.data,
                 "paystack_url": paystack_data['authorization_url'],
@@ -90,9 +118,12 @@ class InitializeBookingFeeView(APIView):
             }, status=status.HTTP_201_CREATED)
             
         except Exception as e:
+            logger.error(f"[InitializeBookingFee] Error occurred: {str(e)}")
+            logger.error(f"[InitializeBookingFee] Traceback: {traceback.format_exc()}")
             return Response({
                 "error": "Failed to initialize payment",
-                "detail": str(e)
+                "detail": str(e),
+                "traceback": traceback.format_exc()
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class InitializePaymentView(APIView):
