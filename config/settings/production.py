@@ -17,8 +17,12 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # CORS settings
-CORS_ALLOWED_ORIGINS = os.environ.get('FRONTEND_URL', '').split(',')
+frontend_urls = os.environ.get('FRONTEND_URL', '').split(',')
+CORS_ALLOWED_ORIGINS = [url.strip() for url in frontend_urls if url.strip()]
 CORS_ALLOW_CREDENTIALS = True
+
+# Frontend URL for callbacks (use first URL from CORS list)
+FRONTEND_URL = frontend_urls[0].strip() if frontend_urls and frontend_urls[0].strip() else 'http://localhost:3000'
 
 # Email settings
 EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')

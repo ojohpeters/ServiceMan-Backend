@@ -41,6 +41,10 @@ CACHES = {
 
 CORS_ALLOWED_ORIGINS = env.list("FRONTEND_URL", default=[])
 
+# Frontend URL for callbacks (use first URL from CORS list)
+frontend_urls = env.list("FRONTEND_URL", default=["http://localhost:3000"])
+FRONTEND_URL = frontend_urls[0] if frontend_urls else "http://localhost:3000"
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
