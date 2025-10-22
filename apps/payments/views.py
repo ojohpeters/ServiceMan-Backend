@@ -94,35 +94,70 @@ class InitializeBookingFeeView(APIView):
             logger.info(f"[InitializeBookingFee] Paystack response: {paystack_data}")
             
             # Create payment record (without service_request yet)
-            # Migration-safe: check if is_emergency column exists
+            # Migration-safe: check which columns exist in the database
             from django.db import connection
             with connection.cursor() as cursor:
                 cursor.execute("""
-                    SELECT column_name 
+                    SELECT column_name, is_nullable
                     FROM information_schema.columns 
                     WHERE table_name='payments_payment' 
-                    AND column_name='is_emergency'
+                    AND column_name IN ('is_emergency', 'service_request_id')
                 """)
-                has_is_emergency = cursor.fetchone() is not None
+                column_info = {row[0]: row[1] == 'YES' for row in cursor.fetchall()}
             
-            logger.info(f"[InitializeBookingFee] is_emergency column exists: {has_is_emergency}")
+            has_is_emergency = 'is_emergency' in column_info
+            service_request_nullable = column_info.get('service_request_id', False)
+            
+            logger.info(f"[InitializeBookingFee] Column check - is_emergency exists: {has_is_emergency}, service_request nullable: {service_request_nullable}")
             logger.info(f"[InitializeBookingFee] Creating Payment record...")
             
-            # Build payment data conditionally
-            payment_data = {
-                'service_request': None,  # Will be linked when service request is created
-                'payment_type': 'INITIAL_BOOKING',
-                'amount': amount,
-                'paystack_reference': paystack_data['reference'],
-                'paystack_access_code': paystack_data['access_code'],
-                'status': 'PENDING'
-            }
+            # If service_request is NOT NULL in DB, we can't create booking fee payments yet
+            if not service_request_nullable:
+                logger.error("[InitializeBookingFee] service_request_id is NOT NULL in database - migrations needed")
+                return Response({
+                    "error": "Database migration required",
+                    "detail": "The booking fee payment feature requires database migrations to be run. "
+                             "Please contact the administrator to run: python manage.py migrate payments"
+                }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
             
-            # Only include is_emergency if the column exists
+            # Use raw SQL to create payment record to avoid ORM trying to insert is_emergency
+            # when the column doesn't exist
             if has_is_emergency:
-                payment_data['is_emergency'] = is_emergency
+                # Column exists, use ORM normally
+                payment = Payment.objects.create(
+                    service_request=None,
+                    payment_type='INITIAL_BOOKING',
+                    amount=amount,
+                    paystack_reference=paystack_data['reference'],
+                    paystack_access_code=paystack_data['access_code'],
+                    status='PENDING',
+                    is_emergency=is_emergency
+                )
+            else:
+                # is_emergency column doesn't exist yet, use raw SQL to insert only existing columns
+                logger.info("[InitializeBookingFee] Using raw SQL (is_emergency column missing)")
+                with connection.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO payments_payment 
+                        (service_request_id, payment_type, amount, paystack_reference, 
+                         paystack_access_code, status, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                    """, [
+                        None,  # service_request_id (now nullable)
+                        'INITIAL_BOOKING',  # payment_type
+                        amount,
+                        paystack_data['reference'],
+                        paystack_data['access_code'],
+                        'PENDING',
+                        timezone.now(),
+                        timezone.now()
+                    ])
+                    payment_id = cursor.fetchone()[0]
+                
+                # Fetch the created payment
+                payment = Payment.objects.get(id=payment_id)
             
-            payment = Payment.objects.create(**payment_data)
             logger.info(f"[InitializeBookingFee] Payment record created: ID={payment.id}")
             
             serializer = PaymentSerializer(payment)
