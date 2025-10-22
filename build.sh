@@ -9,7 +9,11 @@ echo "🗂️  Collecting static files..."
 python manage.py collectstatic --noinput
 
 echo "🗄️  Running database migrations..."
-python manage.py migrate
+echo "Current migrations status:"
+python manage.py showmigrations payments
+
+echo "Applying migrations..."
+python manage.py migrate --verbosity 2
 
 echo "✅ Build completed successfully!"
 
