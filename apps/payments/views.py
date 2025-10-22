@@ -9,6 +9,91 @@ from .serializers import PaymentSerializer
 from .paystack import initialize_payment, verify_payment
 from apps.services.models import ServiceRequest
 from django.utils import timezone
+from decimal import Decimal
+
+# Booking fee constants
+NORMAL_BOOKING_FEE = Decimal('2000.00')
+EMERGENCY_BOOKING_FEE = Decimal('5000.00')
+
+class InitializeBookingFeeView(APIView):
+    """
+    Initialize booking fee payment BEFORE creating a service request.
+    
+    Client must pay the booking fee first:
+    - Normal booking: ₦2,000
+    - Emergency booking: ₦5,000
+    
+    Returns Paystack payment URL for the client to complete payment.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @extend_schema(
+        request={'application/json': {
+            'type': 'object',
+            'properties': {
+                'is_emergency': {'type': 'boolean', 'description': 'Whether this is an emergency booking'}
+            },
+            'required': ['is_emergency']
+        }},
+        responses={
+            201: {
+                'type': 'object',
+                'properties': {
+                    'payment': {'type': 'object'},
+                    'paystack_url': {'type': 'string'},
+                    'amount': {'type': 'number'},
+                    'reference': {'type': 'string'}
+                }
+            }
+        }
+    )
+    def post(self, request):
+        """Initialize booking fee payment"""
+        is_emergency = request.data.get('is_emergency', False)
+        
+        # Calculate booking fee
+        amount = EMERGENCY_BOOKING_FEE if is_emergency else NORMAL_BOOKING_FEE
+        
+        # Generate unique reference
+        timestamp = timezone.now().timestamp()
+        reference = f"BOOKING-{request.user.id}-{timestamp}"
+        
+        # Initialize Paystack payment
+        callback_url = settings.FRONTEND_URL + "/payment/booking-callback"
+        
+        try:
+            paystack_data = initialize_payment(
+                amount=amount,
+                email=request.user.email,
+                reference=reference,
+                callback_url=callback_url
+            )
+            
+            # Create payment record (without service_request yet)
+            payment = Payment.objects.create(
+                service_request=None,  # Will be linked when service request is created
+                payment_type='INITIAL_BOOKING',
+                amount=amount,
+                paystack_reference=paystack_data['reference'],
+                paystack_access_code=paystack_data['access_code'],
+                status='PENDING',
+                is_emergency=is_emergency
+            )
+            
+            serializer = PaymentSerializer(payment)
+            return Response({
+                "payment": serializer.data,
+                "paystack_url": paystack_data['authorization_url'],
+                "amount": str(amount),
+                "reference": reference,
+                "message": f"Please complete payment of ₦{amount:,.2f} to proceed"
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response({
+                "error": "Failed to initialize payment",
+                "detail": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class InitializePaymentView(APIView):
     permission_classes = [permissions.IsAuthenticated]

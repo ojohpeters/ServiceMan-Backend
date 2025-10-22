@@ -233,6 +233,12 @@ class ServiceRequestListCreateView(generics.ListCreateAPIView):
     
     GET: Authenticated users see their relevant requests
     POST: Clients only - Create a new service request
+    
+    IMPORTANT: Client must pay booking fee first!
+    1. Call POST /api/payments/initialize-booking-fee/ to get payment URL
+    2. User pays on Paystack
+    3. Call POST /api/payments/verify/ to confirm payment
+    4. Call POST /api/services/requests/ with payment_reference to create request
     """
     serializer_class = ServiceRequestSerializer
     
@@ -251,6 +257,71 @@ class ServiceRequestListCreateView(generics.ListCreateAPIView):
         elif user.user_type == 'SERVICEMAN':
             return qs.filter(serviceman=user) | qs.filter(backup_serviceman=user)
         return ServiceRequest.objects.none()
+    
+    def create(self, request, *args, **kwargs):
+        """Create service request only if booking fee is paid"""
+        from apps.payments.models import Payment
+        
+        # Get payment reference from request
+        payment_reference = request.data.get('payment_reference')
+        
+        if not payment_reference:
+            return Response({
+                "error": "Payment required",
+                "detail": "You must pay the booking fee before creating a service request. "
+                         "Please call POST /api/payments/initialize-booking-fee/ first."
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Verify payment exists and is successful
+        try:
+            payment = Payment.objects.get(paystack_reference=payment_reference)
+        except Payment.DoesNotExist:
+            return Response({
+                "error": "Invalid payment reference",
+                "detail": "The provided payment reference does not exist."
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if payment.status != 'SUCCESSFUL':
+            return Response({
+                "error": "Payment not completed",
+                "detail": f"Payment status is '{payment.status}'. Please complete payment first.",
+                "payment_status": payment.status
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if payment.service_request is not None:
+            return Response({
+                "error": "Payment already used",
+                "detail": "This payment has already been used for another service request.",
+                "existing_request_id": payment.service_request.id
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Verify payment amount matches the booking type
+        is_emergency = request.data.get('is_emergency', False)
+        expected_amount = 5000 if is_emergency else 2000
+        
+        if float(payment.amount) != float(expected_amount):
+            return Response({
+                "error": "Payment amount mismatch",
+                "detail": f"Expected ₦{expected_amount:,.2f} for {'emergency' if is_emergency else 'normal'} booking, "
+                         f"but payment was ₦{payment.amount:,.2f}. "
+                         f"Please initialize payment again with correct booking type."
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create the service request
+        response = super().create(request, *args, **kwargs)
+        
+        # Link payment to service request
+        if response.status_code == status.HTTP_201_CREATED:
+            service_request_id = response.data['id']
+            service_request = ServiceRequest.objects.get(id=service_request_id)
+            payment.service_request = service_request
+            payment.save()
+            
+            # Add payment info to response
+            response.data['payment_reference'] = payment_reference
+            response.data['payment_amount'] = str(payment.amount)
+        
+        return response
     
     def perform_create(self, serializer):
         serializer.save()
