@@ -1400,6 +1400,10 @@ class AdminApproveServicemanView(APIView):
     def post(self, request):
         from apps.services.models import Category
         from django.utils import timezone
+        from django.db import connection
+        import logging
+        
+        logger = logging.getLogger(__name__)
         
         serviceman_id = request.data.get('serviceman_id')
         category_id = request.data.get('category_id')
@@ -1421,8 +1425,28 @@ class AdminApproveServicemanView(APIView):
         
         profile = user.serviceman_profile
         
-        # Check if already approved
-        if profile.is_approved:
+        # Check if approval fields exist in database
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='users_servicemanprofile'
+                AND column_name IN ('is_approved', 'approved_by_id', 'approved_at', 'rejection_reason')
+            """)
+            existing_columns = [row[0] for row in cursor.fetchall()]
+        
+        has_approval_fields = 'is_approved' in existing_columns
+        
+        if not has_approval_fields:
+            logger.error("Approval fields do not exist in database - migration needed")
+            return Response({
+                "error": "Database migration required",
+                "detail": "The approval system requires database migrations to be run. "
+                         "Please contact the administrator to run: python manage.py migrate users"
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        
+        # Check if already approved (safe to access now)
+        if getattr(profile, 'is_approved', False):
             return Response({
                 "detail": "This serviceman is already approved"
             }, status=400)
@@ -1513,6 +1537,11 @@ class AdminRejectServicemanView(APIView):
         responses={200: OpenApiResponse(description="Serviceman rejected")}
     )
     def post(self, request):
+        from django.db import connection
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
         serviceman_id = request.data.get('serviceman_id')
         rejection_reason = request.data.get('rejection_reason', '')
         
@@ -1537,8 +1566,28 @@ class AdminRejectServicemanView(APIView):
         
         profile = user.serviceman_profile
         
-        # Check if already approved
-        if profile.is_approved:
+        # Check if approval fields exist in database
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='users_servicemanprofile'
+                AND column_name IN ('is_approved', 'rejection_reason')
+            """)
+            existing_columns = [row[0] for row in cursor.fetchall()]
+        
+        has_approval_fields = 'is_approved' in existing_columns
+        
+        if not has_approval_fields:
+            logger.error("Approval fields do not exist in database - migration needed")
+            return Response({
+                "error": "Database migration required",
+                "detail": "The approval system requires database migrations to be run. "
+                         "Please contact the administrator to run: python manage.py migrate users"
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        
+        # Check if already approved (safe to access now)
+        if getattr(profile, 'is_approved', False):
             return Response({
                 "detail": "Cannot reject an already approved serviceman. Consider deactivating their account instead."
             }, status=400)
