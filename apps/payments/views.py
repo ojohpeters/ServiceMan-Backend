@@ -94,16 +94,35 @@ class InitializeBookingFeeView(APIView):
             logger.info(f"[InitializeBookingFee] Paystack response: {paystack_data}")
             
             # Create payment record (without service_request yet)
+            # Migration-safe: check if is_emergency column exists
+            from django.db import connection
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name='payments_payment' 
+                    AND column_name='is_emergency'
+                """)
+                has_is_emergency = cursor.fetchone() is not None
+            
+            logger.info(f"[InitializeBookingFee] is_emergency column exists: {has_is_emergency}")
             logger.info(f"[InitializeBookingFee] Creating Payment record...")
-            payment = Payment.objects.create(
-                service_request=None,  # Will be linked when service request is created
-                payment_type='INITIAL_BOOKING',
-                amount=amount,
-                paystack_reference=paystack_data['reference'],
-                paystack_access_code=paystack_data['access_code'],
-                status='PENDING',
-                is_emergency=is_emergency
-            )
+            
+            # Build payment data conditionally
+            payment_data = {
+                'service_request': None,  # Will be linked when service request is created
+                'payment_type': 'INITIAL_BOOKING',
+                'amount': amount,
+                'paystack_reference': paystack_data['reference'],
+                'paystack_access_code': paystack_data['access_code'],
+                'status': 'PENDING'
+            }
+            
+            # Only include is_emergency if the column exists
+            if has_is_emergency:
+                payment_data['is_emergency'] = is_emergency
+            
+            payment = Payment.objects.create(**payment_data)
             logger.info(f"[InitializeBookingFee] Payment record created: ID={payment.id}")
             
             serializer = PaymentSerializer(payment)
