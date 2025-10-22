@@ -24,6 +24,11 @@ CORS_ALLOW_CREDENTIALS = True
 # Frontend URL for callbacks (use first URL from CORS list)
 FRONTEND_URL = frontend_urls[0].strip() if frontend_urls and frontend_urls[0].strip() else 'http://localhost:3000'
 
+# Paystack settings
+PAYSTACK_SECRET_KEY = os.environ.get('PAYSTACK_SECRET_KEY')
+PAYSTACK_PUBLIC_KEY = os.environ.get('PAYSTACK_PUBLIC_KEY')
+PAYSTACK_WEBHOOK_SECRET = os.environ.get('PAYSTACK_WEBHOOK_SECRET', PAYSTACK_SECRET_KEY)
+
 # Email settings
 EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
 EMAIL_HOST = os.environ.get('EMAIL_HOST')

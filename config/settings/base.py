@@ -45,6 +45,11 @@ CORS_ALLOWED_ORIGINS = env.list("FRONTEND_URL", default=[])
 frontend_urls = env.list("FRONTEND_URL", default=["http://localhost:3000"])
 FRONTEND_URL = frontend_urls[0] if frontend_urls else "http://localhost:3000"
 
+# Paystack settings
+PAYSTACK_SECRET_KEY = env("PAYSTACK_SECRET_KEY", default="")
+PAYSTACK_PUBLIC_KEY = env("PAYSTACK_PUBLIC_KEY", default="")
+PAYSTACK_WEBHOOK_SECRET = env("PAYSTACK_WEBHOOK_SECRET", default=PAYSTACK_SECRET_KEY)
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
