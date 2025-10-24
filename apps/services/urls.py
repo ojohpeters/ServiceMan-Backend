@@ -11,4 +11,7 @@ urlpatterns = [
     path("service-requests/", views.ServiceRequestListCreateView.as_view(), name="service-request-list-create"),
     path("service-requests/<int:pk>/", views.ServiceRequestDetailView.as_view(), name="service-request-detail"),
     path("service-requests/<int:pk>/assign/", views.ServiceRequestAssignView.as_view(), name="service-request-assign"),
+    
+    # Serviceman Job History
+    path("serviceman/job-history/", views.ServicemanJobHistoryView.as_view(), name="serviceman-job-history"),
 ]

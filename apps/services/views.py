@@ -601,3 +601,189 @@ class ServiceRequestAssignView(APIView):
                 "notes": notes
             }
         }, status=200)
+
+
+class ServicemanJobHistoryView(APIView):
+    """
+    Get job history for a serviceman (Serviceman only).
+    
+    Returns all service requests assigned to the serviceman with:
+    - Job details and status
+    - Client information
+    - Payment information
+    - Completion dates
+    - Performance metrics
+    
+    Query Parameters:
+    - status: Filter by job status (optional)
+    - year: Filter by year (optional)
+    - month: Filter by month (optional)
+    - limit: Number of results (default: 50, max: 100)
+    
+    Tags: Serviceman
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @extend_schema(
+        parameters=[
+            {
+                'name': 'status',
+                'in': 'query',
+                'description': 'Filter by job status',
+                'required': False,
+                'schema': {'type': 'string'}
+            },
+            {
+                'name': 'year',
+                'in': 'query', 
+                'description': 'Filter by year',
+                'required': False,
+                'schema': {'type': 'integer'}
+            },
+            {
+                'name': 'month',
+                'in': 'query',
+                'description': 'Filter by month (1-12)',
+                'required': False,
+                'schema': {'type': 'integer', 'minimum': 1, 'maximum': 12}
+            },
+            {
+                'name': 'limit',
+                'in': 'query',
+                'description': 'Number of results (max 100)',
+                'required': False,
+                'schema': {'type': 'integer', 'default': 50, 'maximum': 100}
+            }
+        ],
+        responses={
+            200: OpenApiResponse(description="Job history retrieved successfully"),
+            403: OpenApiResponse(description="Only servicemen can access job history")
+        }
+    )
+    def get(self, request):
+        from django.db.models import Q, Count, Avg, Sum
+        from django.utils import timezone
+        from datetime import datetime
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
+        # Check if user is serviceman
+        if request.user.user_type != 'SERVICEMAN':
+            return Response({
+                "detail": "Only servicemen can access job history"
+            }, status=403)
+        
+        # Get query parameters
+        status_filter = request.query_params.get('status')
+        year_filter = request.query_params.get('year')
+        month_filter = request.query_params.get('month')
+        limit = min(int(request.query_params.get('limit', 50)), 100)
+        
+        # Build queryset - get all requests where user is primary or backup serviceman
+        queryset = ServiceRequest.objects.filter(
+            Q(serviceman=request.user) | Q(backup_serviceman=request.user)
+        ).select_related(
+            'client', 'category', 'serviceman', 'backup_serviceman'
+        ).order_by('-created_at')
+        
+        # Apply filters
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        
+        if year_filter:
+            queryset = queryset.filter(created_at__year=year_filter)
+        
+        if month_filter:
+            queryset = queryset.filter(created_at__month=month_filter)
+        
+        # Get paginated results
+        jobs = queryset[:limit]
+        
+        # Calculate statistics
+        total_jobs = ServiceRequest.objects.filter(
+            Q(serviceman=request.user) | Q(backup_serviceman=request.user)
+        ).count()
+        
+        completed_jobs = ServiceRequest.objects.filter(
+            Q(serviceman=request.user) | Q(backup_serviceman=request.user),
+            status='COMPLETED'
+        ).count()
+        
+        in_progress_jobs = ServiceRequest.objects.filter(
+            Q(serviceman=request.user) | Q(backup_serviceman=request.user),
+            status__in=['IN_PROGRESS', 'PAYMENT_CONFIRMED']
+        ).count()
+        
+        # Calculate total earnings (only from completed jobs)
+        earnings_data = ServiceRequest.objects.filter(
+            Q(serviceman=request.user) | Q(backup_serviceman=request.user),
+            status='COMPLETED',
+            final_cost__isnull=False
+        ).aggregate(
+            total_earnings=Sum('final_cost'),
+            average_job_value=Avg('final_cost')
+        )
+        
+        # Serialize job data
+        job_data = []
+        for job in jobs:
+            job_info = {
+                'id': job.id,
+                'status': job.status,
+                'status_display': job.get_status_display(),
+                'category': {
+                    'id': job.category.id,
+                    'name': job.category.name
+                },
+                'client': {
+                    'id': job.client.id,
+                    'username': job.client.username,
+                    'email': job.client.email,
+                    'full_name': job.client.get_full_name() or job.client.username
+                },
+                'service_description': job.service_description,
+                'client_address': job.client_address,
+                'booking_date': job.booking_date,
+                'is_emergency': job.is_emergency,
+                'initial_booking_fee': str(job.initial_booking_fee),
+                'serviceman_estimated_cost': str(job.serviceman_estimated_cost) if job.serviceman_estimated_cost else None,
+                'final_cost': str(job.final_cost) if job.final_cost else None,
+                'created_at': job.created_at,
+                'inspection_completed_at': job.inspection_completed_at,
+                'work_completed_at': job.work_completed_at,
+                'is_primary_serviceman': job.serviceman == request.user,
+                'is_backup_serviceman': job.backup_serviceman == request.user
+            }
+            job_data.append(job_info)
+        
+        # Prepare response
+        response_data = {
+            'serviceman': {
+                'id': request.user.id,
+                'username': request.user.username,
+                'email': request.user.email,
+                'full_name': request.user.get_full_name() or request.user.username
+            },
+            'statistics': {
+                'total_jobs': total_jobs,
+                'completed_jobs': completed_jobs,
+                'in_progress_jobs': in_progress_jobs,
+                'completion_rate': round((completed_jobs / total_jobs * 100), 2) if total_jobs > 0 else 0,
+                'total_earnings': str(earnings_data['total_earnings'] or 0),
+                'average_job_value': str(earnings_data['average_job_value'] or 0)
+            },
+            'filters_applied': {
+                'status': status_filter,
+                'year': year_filter,
+                'month': month_filter,
+                'limit': limit
+            },
+            'jobs': job_data,
+            'retrieved_at': timezone.now().isoformat()
+        }
+        
+        logger.info(f"Serviceman {request.user.username} accessed job history. "
+                   f"Total jobs: {total_jobs}, Completed: {completed_jobs}")
+        
+        return Response(response_data, status=200)
