@@ -420,7 +420,7 @@ class AllServicemenListView(generics.ListAPIView):
             existing_columns = [row[0] for row in cursor.fetchall()]
         
         # Start with basic queryset
-        queryset = ServicemanProfile.objects.all()
+    queryset = ServicemanProfile.objects.all()
         
         # Defer fields that don't exist yet
         fields_to_defer = []
@@ -1327,83 +1327,159 @@ class AdminGetServicemenByCategoryView(APIView):
     serializer_class = ServicemanProfileSerializer
     
     @extend_schema(
-        responses={200: OpenApiResponse(description="Servicemen grouped by category")}
+        responses={
+            200: OpenApiResponse(description="Servicemen grouped by category"),
+            403: OpenApiResponse(description="Only administrators can access this endpoint"),
+            503: OpenApiResponse(description="Database error or migration required")
+        }
     )
     def get(self, request):
         from apps.services.models import Category
         from django.db.models import Count
+        from django.db import connection
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
+        # Check if approval fields exist in database
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name='users_servicemanprofile'
+                    AND column_name IN ('is_approved', 'is_available', 'rating', 'total_jobs_completed')
+                """)
+                existing_columns = [row[0] for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Error checking ServicemanProfile columns: {e}")
+            existing_columns = []
+        
+        has_approval_fields = 'is_approved' in existing_columns
+        has_availability_field = 'is_available' in existing_columns
+        has_rating_field = 'rating' in existing_columns
+        has_jobs_field = 'total_jobs_completed' in existing_columns
         
         # Get all categories with servicemen count
-        categories = Category.objects.annotate(
-            servicemen_count=Count('servicemanprofile')
-        ).order_by('name')
+        try:
+            categories = Category.objects.annotate(
+                servicemen_count=Count('servicemanprofile')
+            ).order_by('name')
+        except Exception as e:
+            logger.error(f"Error getting categories: {e}")
+            return Response({
+                "error": "Database error",
+                "detail": "Unable to retrieve categories. Please try again later."
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         
         result = []
         total_servicemen = 0
         
         for category in categories:
             # Get servicemen in this category
-            servicemen = User.objects.filter(
-                user_type='SERVICEMAN',
-                serviceman_profile__category=category
-            )
-            
-            servicemen_data = []
-            for s in servicemen:
-                servicemen_data.append({
-                    "id": s.id,
-                    "username": s.username,
-                    "full_name": s.get_full_name(),
-                    "email": s.email,
-                    "is_available": s.serviceman_profile.is_available,
-                    "is_approved": s.serviceman_profile.is_approved,
-                    "rating": float(s.serviceman_profile.rating),
-                    "total_jobs_completed": s.serviceman_profile.total_jobs_completed
+            try:
+                servicemen = User.objects.filter(
+                    user_type='SERVICEMAN',
+                    serviceman_profile__category=category
+                ).select_related('serviceman_profile')
+                
+                servicemen_data = []
+                for s in servicemen:
+                    profile = s.serviceman_profile
+                    
+                    serviceman_info = {
+                        "id": s.id,
+                        "username": s.username,
+                        "full_name": s.get_full_name() or s.username,
+                        "email": s.email,
+                    }
+                    
+                    # Add fields only if they exist in database
+                    if has_availability_field:
+                        serviceman_info["is_available"] = getattr(profile, 'is_available', True)
+                    
+                    if has_approval_fields:
+                        serviceman_info["is_approved"] = getattr(profile, 'is_approved', True)
+                    
+                    if has_rating_field:
+                        serviceman_info["rating"] = float(getattr(profile, 'rating', 0.0))
+                    
+                    if has_jobs_field:
+                        serviceman_info["total_jobs_completed"] = getattr(profile, 'total_jobs_completed', 0)
+                    
+                    servicemen_data.append(serviceman_info)
+                
+                total_servicemen += len(servicemen_data)
+                
+                result.append({
+                    "category": {
+                        "id": category.id,
+                        "name": category.name,
+                        "description": category.description
+                    },
+                    "servicemen_count": len(servicemen_data),
+                    "servicemen": servicemen_data
                 })
-            
-            total_servicemen += len(servicemen_data)
-            
-            result.append({
-                "category": {
-                    "id": category.id,
-                    "name": category.name,
-                    "description": category.description
-                },
-                "servicemen_count": len(servicemen_data),
-                "servicemen": servicemen_data
-            })
+                
+            except Exception as e:
+                logger.error(f"Error processing category {category.name}: {e}")
+                continue
         
         # Get unassigned servicemen (no category)
-        unassigned = User.objects.filter(
-            user_type='SERVICEMAN',
-            serviceman_profile__category__isnull=True
-        )
-        
-        if unassigned.exists():
-            unassigned_data = []
-            for s in unassigned:
-                unassigned_data.append({
-                    "id": s.id,
-                    "username": s.username,
-                    "full_name": s.get_full_name(),
-                    "email": s.email,
-                    "is_available": s.serviceman_profile.is_available,
-                    "is_approved": s.serviceman_profile.is_approved,
-                    "rating": float(s.serviceman_profile.rating)
-                })
+        try:
+            unassigned = User.objects.filter(
+                user_type='SERVICEMAN',
+                serviceman_profile__category__isnull=True
+            ).select_related('serviceman_profile')
             
-            result.append({
-                "category": None,
-                "servicemen_count": len(unassigned_data),
-                "servicemen": unassigned_data,
-                "note": "Unassigned servicemen - no category set"
-            })
-            total_servicemen += len(unassigned_data)
+            if unassigned.exists():
+                unassigned_data = []
+                for s in unassigned:
+                    profile = s.serviceman_profile
+                    
+                    serviceman_info = {
+                        "id": s.id,
+                        "username": s.username,
+                        "full_name": s.get_full_name() or s.username,
+                        "email": s.email,
+                    }
+                    
+                    # Add fields only if they exist in database
+                    if has_availability_field:
+                        serviceman_info["is_available"] = getattr(profile, 'is_available', True)
+                    
+                    if has_approval_fields:
+                        serviceman_info["is_approved"] = getattr(profile, 'is_approved', True)
+                    
+                    if has_rating_field:
+                        serviceman_info["rating"] = float(getattr(profile, 'rating', 0.0))
+                    
+                    if has_jobs_field:
+                        serviceman_info["total_jobs_completed"] = getattr(profile, 'total_jobs_completed', 0)
+                    
+                    unassigned_data.append(serviceman_info)
+                
+                result.append({
+                    "category": None,
+                    "servicemen_count": len(unassigned_data),
+                    "servicemen": unassigned_data,
+                    "note": "Unassigned servicemen - no category set"
+                })
+                total_servicemen += len(unassigned_data)
+                
+        except Exception as e:
+            logger.error(f"Error processing unassigned servicemen: {e}")
         
         return Response({
             "total_servicemen": total_servicemen,
             "total_categories": categories.count(),
-            "categories": result
+            "categories": result,
+            "database_status": {
+                "has_approval_fields": has_approval_fields,
+                "has_availability_field": has_availability_field,
+                "has_rating_field": has_rating_field,
+                "has_jobs_field": has_jobs_field
+            }
         })
 
 
