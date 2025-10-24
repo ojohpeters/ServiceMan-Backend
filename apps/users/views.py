@@ -821,9 +821,54 @@ class SkillListView(generics.ListAPIView):
     
     Query Parameters:
     - category: Filter by skill category (TECHNICAL, MANUAL, CREATIVE, PROFESSIONAL, OTHER)
+    
+    Tags: Public
     """
     serializer_class = SkillSerializer
     permission_classes = [permissions.AllowAny]
+    
+    @extend_schema(
+        parameters=[
+            {
+                'name': 'category',
+                'in': 'query',
+                'description': 'Filter by skill category',
+                'required': False,
+                'schema': {'type': 'string', 'enum': ['TECHNICAL', 'MANUAL', 'CREATIVE', 'PROFESSIONAL', 'OTHER']}
+            }
+        ],
+        responses={
+            200: OpenApiResponse(description="List of active skills"),
+            503: OpenApiResponse(description="Database migration required")
+        }
+    )
+    def get(self, request, *args, **kwargs):
+        from django.db import connection
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
+        # Check if Skills table exists
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = 'users_skill'
+                    );
+                """)
+                table_exists = cursor.fetchone()[0]
+            
+            if not table_exists:
+                logger.warning("Skills table does not exist - returning empty list")
+                return Response([], status=200)
+                
+        except Exception as e:
+            logger.error(f"Error checking Skills table existence: {e}")
+            return Response([], status=200)
+        
+        # Proceed with normal list
+        return super().get(request, *args, **kwargs)
     
     def get_queryset(self):
         try:
@@ -838,13 +883,6 @@ class SkillListView(generics.ListAPIView):
         except Exception:
             # Skills table doesn't exist yet, return empty queryset
             return Skill.objects.none()
-    
-    def list(self, request, *args, **kwargs):
-        try:
-            return super().list(request, *args, **kwargs)
-        except Exception:
-            # Skills table doesn't exist yet
-            return Response([], status=200)
 
 
 class SkillDetailView(generics.RetrieveAPIView):
@@ -875,9 +913,70 @@ class SkillCreateView(generics.CreateAPIView):
     
     Only administrators can create new skills.
     Skills are used by servicemen to showcase their expertise.
+    
+    Body:
+    {
+        "name": "string (required)",
+        "category": "string (optional - TECHNICAL, MANUAL, CREATIVE, PROFESSIONAL, OTHER)",
+        "description": "string (optional)"
+    }
+    
+    Tags: Admin
     """
     serializer_class = SkillCreateSerializer
     permission_classes = [IsAdmin]
+    
+    @extend_schema(
+        request={'application/json': {
+            'type': 'object',
+            'properties': {
+                'name': {'type': 'string', 'maxLength': 100},
+                'category': {'type': 'string', 'enum': ['TECHNICAL', 'MANUAL', 'CREATIVE', 'PROFESSIONAL', 'OTHER']},
+                'description': {'type': 'string'}
+            },
+            'required': ['name']
+        }},
+        responses={
+            201: OpenApiResponse(description="Skill created successfully"),
+            400: OpenApiResponse(description="Invalid input data"),
+            403: OpenApiResponse(description="Only administrators can create skills"),
+            503: OpenApiResponse(description="Database migration required")
+        }
+    )
+    def post(self, request, *args, **kwargs):
+        from django.db import connection
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
+        # Check if Skills table exists
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = 'users_skill'
+                    );
+                """)
+                table_exists = cursor.fetchone()[0]
+            
+            if not table_exists:
+                logger.error("Skills table does not exist - migration needed")
+                return Response({
+                    "error": "Database migration required",
+                    "detail": "The skills system requires database migrations to be run. "
+                             "Please contact the administrator to run: python manage.py migrate users"
+                }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+                
+        except Exception as e:
+            logger.error(f"Error checking Skills table existence: {e}")
+            return Response({
+                "error": "Database error",
+                "detail": "Unable to verify database schema. Please try again later."
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        
+        # Proceed with normal creation
+        return super().post(request, *args, **kwargs)
     
     def perform_create(self, serializer):
         serializer.save()
