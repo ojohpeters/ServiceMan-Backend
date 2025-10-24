@@ -420,7 +420,7 @@ class AllServicemenListView(generics.ListAPIView):
             existing_columns = [row[0] for row in cursor.fetchall()]
         
         # Start with basic queryset
-    queryset = ServicemanProfile.objects.all()
+        queryset = ServicemanProfile.objects.all()
         
         # Defer fields that don't exist yet
         fields_to_defer = []
