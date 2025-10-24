@@ -10,4 +10,5 @@ urlpatterns = [
     # Service Requests
     path("service-requests/", views.ServiceRequestListCreateView.as_view(), name="service-request-list-create"),
     path("service-requests/<int:pk>/", views.ServiceRequestDetailView.as_view(), name="service-request-detail"),
+    path("service-requests/<int:pk>/assign/", views.ServiceRequestAssignView.as_view(), name="service-request-assign"),
 ]

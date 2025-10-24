@@ -326,14 +326,19 @@ class ServiceRequestListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         serializer.save()
 
-class ServiceRequestDetailView(generics.RetrieveAPIView):
+class ServiceRequestDetailView(generics.RetrieveUpdateAPIView):
     """
-    Retrieve a specific service request.
+    Retrieve and update a specific service request.
     
     Access control:
-    - Admins: Can view all requests
-    - Clients: Can view their own requests
-    - Servicemen: Can view assigned requests (primary or backup)
+    - Admins: Can view and update all requests
+    - Clients: Can view and update their own requests (limited fields)
+    - Servicemen: Can view assigned requests (primary or backup), limited updates
+    
+    Update permissions:
+    - Admins: Can update all fields including serviceman assignment
+    - Clients: Can update description, address, booking_date
+    - Servicemen: Can update status, estimated_cost (when assigned)
     """
     queryset = ServiceRequest.objects.all()
     serializer_class = ServiceRequestSerializer
@@ -350,3 +355,249 @@ class ServiceRequestDetailView(generics.RetrieveAPIView):
         if user.user_type == 'SERVICEMAN' and (obj.serviceman == user or obj.backup_serviceman == user):
             return obj
         raise permissions.PermissionDenied()
+    
+    def get_serializer_class(self):
+        """Return different serializers based on user type and action"""
+        if self.request.method == 'GET':
+            return ServiceRequestSerializer
+        
+        user = self.request.user
+        if user.user_type == 'ADMIN':
+            return ServiceRequestSerializer  # Admins can update everything
+        elif user.user_type == 'CLIENT':
+            return ServiceRequestSerializer  # Clients can update their requests
+        elif user.user_type == 'SERVICEMAN':
+            return ServiceRequestSerializer  # Servicemen can update assigned requests
+        else:
+            return ServiceRequestSerializer
+    
+    def perform_update(self, serializer):
+        """Custom update logic based on user type"""
+        user = self.request.user
+        instance = self.get_object()
+        
+        # Log the update
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        if user.user_type == 'ADMIN':
+            # Admins can update everything
+            logger.info(f"Admin {user.username} updated service request {instance.id}")
+            serializer.save()
+            
+        elif user.user_type == 'CLIENT':
+            # Clients can update their own requests (limited fields)
+            if instance.client != user:
+                raise permissions.PermissionDenied("You can only update your own service requests")
+            
+            # Only allow updating certain fields
+            allowed_fields = ['service_description', 'client_address', 'booking_date']
+            for field in allowed_fields:
+                if field in serializer.validated_data:
+                    setattr(instance, field, serializer.validated_data[field])
+            
+            instance.save()
+            logger.info(f"Client {user.username} updated service request {instance.id}")
+            
+        elif user.user_type == 'SERVICEMAN':
+            # Servicemen can update assigned requests
+            if instance.serviceman != user and instance.backup_serviceman != user:
+                raise permissions.PermissionDenied("You can only update requests assigned to you")
+            
+            # Servicemen can update status and estimated cost
+            allowed_fields = ['status', 'serviceman_estimated_cost']
+            for field in allowed_fields:
+                if field in serializer.validated_data:
+                    setattr(instance, field, serializer.validated_data[field])
+            
+            instance.save()
+            logger.info(f"Serviceman {user.username} updated service request {instance.id}")
+        
+        else:
+            raise permissions.PermissionDenied()
+
+
+class ServiceRequestAssignView(APIView):
+    """
+    Assign servicemen to service requests (Admin only).
+    
+    This endpoint allows admins to:
+    - Assign a primary serviceman to a request
+    - Assign a backup serviceman to a request
+    - Update serviceman assignments
+    - Remove serviceman assignments
+    
+    Body:
+    {
+        "serviceman_id": int (optional - primary serviceman),
+        "backup_serviceman_id": int (optional - backup serviceman),
+        "notes": string (optional - assignment notes)
+    }
+    
+    Tags: Admin
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @extend_schema(
+        request={'application/json': {
+            'type': 'object',
+            'properties': {
+                'serviceman_id': {'type': 'integer', 'nullable': True},
+                'backup_serviceman_id': {'type': 'integer', 'nullable': True},
+                'notes': {'type': 'string'}
+            }
+        }},
+        responses={
+            200: OpenApiResponse(description="Servicemen assigned successfully"),
+            400: OpenApiResponse(description="Invalid serviceman ID or validation error"),
+            403: OpenApiResponse(description="Only administrators can assign servicemen"),
+            404: OpenApiResponse(description="Service request or serviceman not found")
+        }
+    )
+    def post(self, request, pk):
+        from apps.users.models import User
+        from django.utils import timezone
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
+        # Check if user is admin
+        if request.user.user_type != 'ADMIN':
+            return Response({
+                "detail": "Only administrators can assign servicemen to service requests"
+            }, status=403)
+        
+        # Get service request
+        try:
+            service_request = ServiceRequest.objects.get(pk=pk)
+        except ServiceRequest.DoesNotExist:
+            return Response({
+                "detail": f"Service request with ID {pk} not found"
+            }, status=404)
+        
+        serviceman_id = request.data.get('serviceman_id')
+        backup_serviceman_id = request.data.get('backup_serviceman_id')
+        notes = request.data.get('notes', '')
+        
+        # Validate serviceman IDs
+        serviceman = None
+        backup_serviceman = None
+        
+        if serviceman_id:
+            try:
+                serviceman = User.objects.get(id=serviceman_id, user_type='SERVICEMAN')
+                # Check if serviceman is approved
+                if hasattr(serviceman, 'serviceman_profile') and not getattr(serviceman.serviceman_profile, 'is_approved', True):
+                    return Response({
+                        "detail": f"Serviceman {serviceman.username} is not approved yet"
+                    }, status=400)
+            except User.DoesNotExist:
+                return Response({
+                    "detail": f"Serviceman with ID {serviceman_id} not found"
+                }, status=404)
+        
+        if backup_serviceman_id:
+            try:
+                backup_serviceman = User.objects.get(id=backup_serviceman_id, user_type='SERVICEMAN')
+                # Check if backup serviceman is approved
+                if hasattr(backup_serviceman, 'serviceman_profile') and not getattr(backup_serviceman.serviceman_profile, 'is_approved', True):
+                    return Response({
+                        "detail": f"Backup serviceman {backup_serviceman.username} is not approved yet"
+                    }, status=400)
+            except User.DoesNotExist:
+                return Response({
+                    "detail": f"Backup serviceman with ID {backup_serviceman_id} not found"
+                }, status=404)
+        
+        # Prevent assigning same serviceman as both primary and backup
+        if serviceman_id and backup_serviceman_id and serviceman_id == backup_serviceman_id:
+            return Response({
+                "detail": "Primary and backup servicemen cannot be the same person"
+            }, status=400)
+        
+        # Update assignments
+        old_serviceman = service_request.serviceman
+        old_backup = service_request.backup_serviceman
+        
+        if serviceman_id is not None:
+            service_request.serviceman = serviceman
+        if backup_serviceman_id is not None:
+            service_request.backup_serviceman = backup_serviceman
+        
+        # Update status if assigning serviceman
+        if serviceman and service_request.status == 'PENDING':
+            service_request.status = 'ASSIGNED'
+        
+        service_request.save()
+        
+        # Send notifications
+        try:
+            from apps.notifications.models import Notification
+            
+            # Notify primary serviceman
+            if serviceman and serviceman != old_serviceman:
+                Notification.objects.create(
+                    user=serviceman,
+                    notification_type='SERVICE_ASSIGNED',
+                    title='New Service Request Assignment',
+                    message=f'You have been assigned to a new service request #{service_request.id}. '
+                            f'Category: {service_request.category.name}. '
+                            f'Date: {service_request.booking_date}. '
+                            f'Address: {service_request.client_address}. '
+                            f'{f"Notes: {notes}" if notes else ""}',
+                    is_read=False
+                )
+            
+            # Notify backup serviceman
+            if backup_serviceman and backup_serviceman != old_backup:
+                Notification.objects.create(
+                    user=backup_serviceman,
+                    notification_type='SERVICE_ASSIGNED',
+                    title='Service Request Backup Assignment',
+                    message=f'You have been assigned as backup serviceman for request #{service_request.id}. '
+                            f'Category: {service_request.category.name}. '
+                            f'Date: {service_request.booking_date}.',
+                    is_read=False
+                )
+            
+            # Notify client
+            Notification.objects.create(
+                user=service_request.client,
+                notification_type='SERVICE_ASSIGNED',
+                title='Service Request Update',
+                message=f'Your service request #{service_request.id} has been assigned to a serviceman. '
+                        f'You will be contacted soon to discuss the details.',
+                is_read=False
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to send assignment notifications: {e}")
+        
+        # Log the assignment
+        logger.info(
+            f"Admin {request.user.username} assigned servicemen to request {service_request.id}. "
+            f"Primary: {serviceman.username if serviceman else 'None'}, "
+            f"Backup: {backup_serviceman.username if backup_serviceman else 'None'}. "
+            f"Notes: {notes}"
+        )
+        
+        return Response({
+            "detail": "Servicemen assigned successfully",
+            "service_request": {
+                "id": service_request.id,
+                "status": service_request.status,
+                "serviceman": {
+                    "id": serviceman.id,
+                    "username": serviceman.username,
+                    "email": serviceman.email
+                } if serviceman else None,
+                "backup_serviceman": {
+                    "id": backup_serviceman.id,
+                    "username": backup_serviceman.username,
+                    "email": backup_serviceman.email
+                } if backup_serviceman else None,
+                "assigned_by": request.user.username,
+                "assigned_at": timezone.now().isoformat(),
+                "notes": notes
+            }
+        }, status=200)
