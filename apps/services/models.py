@@ -14,16 +14,33 @@ class Category(models.Model):
 
 class ServiceRequest(models.Model):
     STATUS_CHOICES = [
-        ('PENDING_ADMIN_ASSIGNMENT', 'Pending Admin Assignment'),
+        # Initial State
+        ('PENDING_ADMIN_ASSIGNMENT', 'Pending Admin Assignment'),  # Initial state after client booking & booking fee payment. Waiting for admin to assign a serviceman.
+        
+        # Estimation Phase
+        ('PENDING_ESTIMATION', 'Pending Estimation'),  # Admin has assigned serviceman. Serviceman needs to visit site and provide raw estimate.
+        ('ESTIMATION_SUBMITTED', 'Estimation Submitted'),  # Serviceman has submitted raw estimate. Waiting for admin to add platform fee.
+        
+        # Client Approval & Payment Phase
+        ('AWAITING_CLIENT_APPROVAL', 'Awaiting Client Approval'),  # Admin has added platform fee and sent final price to client. Waiting for client to approve and pay.
+        ('PAYMENT_COMPLETED', 'Payment Completed'),  # Client has successfully paid the full amount. Job is now officially active.
+        
+        # Execution Phase
+        ('IN_PROGRESS', 'In Progress'),  # Serviceman has started the work. Job appears on both client and serviceman dashboards.
+        ('COMPLETED', 'Completed'),  # Serviceman has marked the job as finished.
+        
+        # Final State
+        ('CLIENT_REVIEWED', 'Client Reviewed'),  # Client has left a rating and review for the serviceman.
+        
+        # Cancellation State
+        ('CANCELLED', 'Cancelled'),  # Job was cancelled by admin, client, or serviceman before completion.
+        
+        # Legacy statuses (deprecated but kept for backward compatibility)
         ('ASSIGNED_TO_SERVICEMAN', 'Assigned to Serviceman'),
         ('SERVICEMAN_INSPECTED', 'Serviceman Inspected'),
-        ('AWAITING_CLIENT_APPROVAL', 'Awaiting Client Approval'),
         ('NEGOTIATING', 'Negotiating'),
         ('AWAITING_PAYMENT', 'Awaiting Payment'),
         ('PAYMENT_CONFIRMED', 'Payment Confirmed'),
-        ('IN_PROGRESS', 'In Progress'),
-        ('COMPLETED', 'Completed'),
-        ('CANCELLED', 'Cancelled'),
     ]
     client = models.ForeignKey(User, on_delete=models.CASCADE, related_name='client_requests')
     serviceman = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='serviceman_requests')

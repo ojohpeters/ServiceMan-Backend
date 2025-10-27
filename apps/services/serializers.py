@@ -44,5 +44,5 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
         validated_data['auto_flagged_emergency'] = auto_flagged_emergency
         validated_data['is_emergency'] = is_emergency
         validated_data['initial_booking_fee'] = 5000 if is_emergency else 2000
-        validated_data['status'] = 'PENDING_ADMIN_ASSIGNMENT'
+        validated_data['status'] = 'PENDING_ADMIN_ASSIGNMENT'  # Initial state after booking fee payment
         return super().create(validated_data)
