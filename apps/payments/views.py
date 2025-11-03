@@ -273,7 +273,48 @@ class PaymentVerifyView(APIView):
             payment.status = 'SUCCESSFUL'
             payment.paid_at = timezone.now()
             payment.save()
-            # Optionally: Send notifications, update ServiceRequest etc.
+            
+            # STEP 5: Notify admin when client pays full amount (not booking fee)
+            if payment.service_request and payment.payment_type == 'SERVICE_PAYMENT':
+                try:
+                    from apps.notifications.models import Notification
+                    from django.contrib.auth import get_user_model
+                    import logging
+                    
+                    logger = logging.getLogger(__name__)
+                    User = get_user_model()
+                    
+                    # Update service request status
+                    service_request = payment.service_request
+                    service_request.status = 'PAYMENT_COMPLETED'
+                    service_request.save()
+                    
+                    # Notify all admins
+                    admins = User.objects.filter(user_type='ADMIN')
+                    for admin in admins:
+                        Notification.objects.create(
+                            user=admin,
+                            title=f'Payment Received - Request #{service_request.id}',
+                            message=f'Client {service_request.client.get_full_name()} has completed payment of ₦{payment.amount:,.2f} for service request #{service_request.id}.\n\n'
+                                   f'Category: {service_request.category.name}\n'
+                                   f'Serviceman: {service_request.serviceman.get_full_name() if service_request.serviceman else "Not assigned"}\n\n'
+                                   f'Please authorize the serviceman to begin work.',
+                            notification_type='ADMIN_ALERT',
+                            is_read=False
+                        )
+                    logger.info(f"Notified {admins.count()} admin(s) about payment for request #{service_request.id}")
+                    
+                    # Also notify client
+                    Notification.objects.create(
+                        user=service_request.client,
+                        title='Payment Confirmed',
+                        message=f'Your payment of ₦{payment.amount:,.2f} has been confirmed.\n\n'
+                               f'The admin will authorize the serviceman to begin work shortly. You will be notified once work begins.',
+                        notification_type='PAYMENT_CONFIRMED',
+                        is_read=False
+                    )
+                except Exception as e:
+                    logger.error(f"Error sending payment notifications: {str(e)}")
         else:
             payment.status = 'FAILED'
             payment.save()

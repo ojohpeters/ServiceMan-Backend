@@ -317,37 +317,6 @@ class ServiceRequestListCreateView(generics.ListCreateAPIView):
             payment.service_request = service_request
             payment.save()
             
-            # STEP 1: Notify admin about new service request
-            try:
-                from apps.notifications.models import Notification
-                admins = User.objects.filter(user_type='ADMIN')
-                for admin in admins:
-                    Notification.objects.create(
-                        user=admin,
-                        title=f'New Service Request #{service_request.id}',
-                        message=f'Client {request.user.get_full_name()} has booked a {"EMERGENCY " if service_request.is_emergency else ""}service request.\n\n'
-                               f'Category: {service_request.category.name}\n'
-                               f'Booking Date: {service_request.booking_date}\n'
-                               f'Address: {service_request.client_address}\n'
-                               f'Description: {service_request.service_description}\n\n'
-                               f'Please assign a serviceman to this request.',
-                        notification_type='ADMIN_ALERT',
-                        is_read=False
-                    )
-                logger.info(f"Notified {admins.count()} admin(s) about new service request #{service_request.id}")
-                
-                # Also send confirmation to client
-                Notification.objects.create(
-                    user=request.user,
-                    title='Service Request Received',
-                    message=f'Your service request has been received successfully. Request ID: #{service_request.id}\n\n'
-                           f'Our admin will review and assign a serviceman shortly. You will be notified once assigned.',
-                    notification_type='GENERAL',
-                    is_read=False
-                )
-            except Exception as e:
-                logger.error(f"Error sending notifications for service request #{service_request_id}: {str(e)}")
-            
             # Add payment info to response
             response.data['payment_reference'] = payment_reference
             response.data['payment_amount'] = str(payment.amount)
@@ -555,9 +524,9 @@ class ServiceRequestAssignView(APIView):
         if backup_serviceman_id is not None:
             service_request.backup_serviceman = backup_serviceman
         
-        # STEP 2: Update status when admin assigns serviceman
-        if serviceman and service_request.status == 'PENDING_ADMIN_ASSIGNMENT':
-            service_request.status = 'PENDING_ESTIMATION'
+        # Update status if assigning serviceman
+        if serviceman and service_request.status == 'PENDING':
+            service_request.status = 'ASSIGNED'
         
         service_request.save()
         
@@ -565,23 +534,17 @@ class ServiceRequestAssignView(APIView):
         try:
             from apps.notifications.models import Notification
             
-            # STEP 2: Notify primary serviceman
+            # Notify primary serviceman
             if serviceman and serviceman != old_serviceman:
-                client_phone = getattr(service_request.client, 'phone_number', 'Not provided')
                 Notification.objects.create(
                     user=serviceman,
-                    notification_type='JOB_ASSIGNED',
-                    title=f'New Job Assignment - Request #{service_request.id}',
-                    message=f'You have been assigned to a new service request.\n\n'
-                            f'📋 Job Details:\n'
-                            f'• Category: {service_request.category.name}\n'
-                            f'• Booking Date: {service_request.booking_date}\n'
-                            f'• Address: {service_request.client_address}\n'
-                            f'• Description: {service_request.service_description}\n\n'
-                            f'👤 Client Contact:\n'
-                            f'• Name: {service_request.client.get_full_name()}\n'
-                            f'• Phone: {client_phone}\n\n'
-                            f'📝 Next Step: Please contact the client to schedule a site visit and provide a cost estimate.{f"\n\nAdmin Notes: {notes}" if notes else ""}',
+                    notification_type='SERVICE_ASSIGNED',
+                    title='New Service Request Assignment',
+                    message=f'You have been assigned to a new service request #{service_request.id}. '
+                            f'Category: {service_request.category.name}. '
+                            f'Date: {service_request.booking_date}. '
+                            f'Address: {service_request.client_address}. '
+                            f'{f"Notes: {notes}" if notes else ""}',
                     is_read=False
                 )
             
@@ -600,11 +563,10 @@ class ServiceRequestAssignView(APIView):
             # Notify client
             Notification.objects.create(
                 user=service_request.client,
-                notification_type='STATUS_UPDATE',
-                title=f'Serviceman Assigned - Request #{service_request.id}',
-                message=f'Good news! A serviceman has been assigned to your service request.\n\n'
-                        f'The serviceman will contact you shortly to schedule a site visit and discuss your requirements.\n\n'
-                        f'Please ensure you are available at the provided address.',
+                notification_type='SERVICE_ASSIGNED',
+                title='Service Request Update',
+                message=f'Your service request #{service_request.id} has been assigned to a serviceman. '
+                        f'You will be contacted soon to discuss the details.',
                 is_read=False
             )
             
