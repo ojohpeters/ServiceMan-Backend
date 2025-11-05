@@ -43,8 +43,9 @@ class ServiceRequest(models.Model):
         ('PAYMENT_CONFIRMED', 'Payment Confirmed'),
     ]
     client = models.ForeignKey(User, on_delete=models.CASCADE, related_name='client_requests')
-    serviceman = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='serviceman_requests')
-    backup_serviceman = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='backup_requests')
+    preferred_serviceman = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='preferred_requests', help_text="Client's preferred serviceman (optional)")
+    serviceman = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='serviceman_requests', help_text="Assigned primary serviceman")
+    backup_serviceman = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='backup_requests', help_text="Assigned backup serviceman")
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
     booking_date = models.DateField()
     is_emergency = models.BooleanField(default=False)

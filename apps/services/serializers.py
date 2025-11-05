@@ -14,15 +14,25 @@ class CategoryCreateSerializer(serializers.ModelSerializer):
 
 class ServiceRequestSerializer(serializers.ModelSerializer):
     client = UserSerializer(read_only=True)
+    preferred_serviceman = UserSerializer(read_only=True)
     serviceman = UserSerializer(read_only=True)
     backup_serviceman = UserSerializer(read_only=True)
     category = CategorySerializer(read_only=True)
     category_id = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all(), source='category', write_only=True)
+    preferred_serviceman_id = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.filter(user_type='SERVICEMAN'), 
+        source='preferred_serviceman', 
+        write_only=True, 
+        required=False,
+        allow_null=True,
+        help_text="Optional: Client's preferred serviceman ID"
+    )
 
     class Meta:
         model = ServiceRequest
         fields = [
-            'id', 'client', 'serviceman', 'backup_serviceman', 'category', 'category_id',
+            'id', 'client', 'preferred_serviceman', 'preferred_serviceman_id', 
+            'serviceman', 'backup_serviceman', 'category', 'category_id',
             'booking_date', 'is_emergency', 'auto_flagged_emergency', 'status',
             'initial_booking_fee', 'serviceman_estimated_cost', 'admin_markup_percentage',
             'final_cost', 'client_address', 'service_description',
