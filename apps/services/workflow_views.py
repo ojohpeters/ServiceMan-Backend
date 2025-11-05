@@ -24,6 +24,7 @@ from django.db import transaction
 from django.contrib.auth import get_user_model
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 from decimal import Decimal
+import decimal
 import logging
 
 from .models import ServiceRequest
@@ -143,23 +144,43 @@ class ServicemanSubmitEstimateView(APIView):
             )
         
         # Update service request
-        with transaction.atomic():
-            service_request.serviceman_estimated_cost = estimated_cost
-            service_request.status = 'ESTIMATION_SUBMITTED'
-            service_request.save()
+        try:
+            with transaction.atomic():
+                service_request.serviceman_estimated_cost = estimated_cost
+                service_request.status = 'ESTIMATION_SUBMITTED'
+                service_request.save()
+                
+                # Notify admin
+                notify_admins(
+                    title=f"Cost Estimate Submitted - Request #{service_request.id}",
+                    message=f"Serviceman {request.user.get_full_name()} submitted cost estimate of ₦{estimated_cost:,.2f} for service request #{service_request.id}. Please review and add platform fee.{f' Notes: {notes}' if notes else ''}",
+                    service_request=service_request
+                )
+                
+                # Notify client
+                Notification.objects.create(
+                    user=service_request.client,
+                    title=f'Estimate Submitted - Request #{service_request.id}',
+                    message=f'The serviceman has submitted a cost estimate of ₦{estimated_cost:,.2f}. Our admin will review and finalize the pricing shortly.',
+                    notification_type='STATUS_UPDATE',
+                    is_read=False
+                )
             
-            # Notify admin
-            notify_admins(
-                title=f"Cost Estimate Submitted - Request #{service_request.id}",
-                message=f"Serviceman {request.user.get_full_name()} submitted cost estimate of ₦{estimated_cost:,.2f} for service request #{service_request.id}. Please review and add platform fee.{f' Notes: {notes}' if notes else ''}",
-                service_request=service_request
-            )
-        
-        serializer = ServiceRequestSerializer(service_request)
-        return Response({
-            'message': 'Estimate submitted successfully. Admin will review and finalize pricing.',
-            'service_request': serializer.data
-        }, status=status.HTTP_200_OK)
+            # Refresh from database to get updated relations
+            service_request.refresh_from_db()
+            serializer = ServiceRequestSerializer(service_request, context={'request': request})
+            
+            return Response({
+                'message': 'Estimate submitted successfully. Admin will review and finalize pricing.',
+                'service_request': serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error submitting estimate: {str(e)}", exc_info=True)
+            return Response({
+                'error': 'Failed to submit estimate',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ============================================================================
