@@ -196,39 +196,72 @@ class InitializePaymentView(APIView):
         responses={201: PaymentSerializer}
     )
     def post(self, request):
-        # Accept both 'service_request' and 'service_request_id' for backward compatibility
-        service_request_id = request.data.get('service_request') or request.data.get('service_request_id')
-        payment_type = request.data.get('payment_type')
-        amount = request.data.get('amount')
+        import logging
+        logger = logging.getLogger(__name__)
         
-        if not service_request_id:
-            return Response({
-                'error': 'service_request or service_request_id is required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        service_request = get_object_or_404(ServiceRequest, id=service_request_id)
-        reference = f"{service_request_id}-{payment_type}-{timezone.now().timestamp()}"
-        callback_url = settings.FRONTEND_URL + "/payment/callback"
-        paystack_data = initialize_payment(
-            amount=amount,
-            email=request.user.email,
-            reference=reference,
-            callback_url=callback_url
-        )
+        try:
+            # Accept both 'service_request' and 'service_request_id' for backward compatibility
+            service_request_id = request.data.get('service_request') or request.data.get('service_request_id')
+            payment_type = request.data.get('payment_type')
+            amount = request.data.get('amount')
+            
+            logger.info(f"[PaymentInitialize] Request data: {request.data}")
+            
+            if not service_request_id:
+                return Response({
+                    'error': 'service_request or service_request_id is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if not payment_type:
+                return Response({
+                    'error': 'payment_type is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if not amount:
+                return Response({
+                    'error': 'amount is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            service_request = get_object_or_404(ServiceRequest, id=service_request_id)
+            logger.info(f"[PaymentInitialize] Found service request #{service_request.id}")
+            
+            reference = f"{service_request_id}-{payment_type}-{timezone.now().timestamp()}"
+            callback_url = settings.FRONTEND_URL + "/payment/callback"
+            
+            logger.info(f"[PaymentInitialize] Calling Paystack with amount={amount}, reference={reference}")
+            
+            paystack_data = initialize_payment(
+                amount=amount,
+                email=request.user.email,
+                reference=reference,
+                callback_url=callback_url
+            )
+            
+            logger.info(f"[PaymentInitialize] Paystack response received")
 
-        payment = Payment.objects.create(
-            service_request=service_request,
-            payment_type=payment_type,
-            amount=amount,
-            paystack_reference=paystack_data['reference'],
-            paystack_access_code=paystack_data['access_code'],
-            status='PENDING'
-        )
-        serializer = PaymentSerializer(payment)
-        return Response({
-            "payment": serializer.data,
-            "paystack_url": paystack_data['authorization_url']
-        }, status=201)
+            payment = Payment.objects.create(
+                service_request=service_request,
+                payment_type=payment_type,
+                amount=amount,
+                paystack_reference=paystack_data['reference'],
+                paystack_access_code=paystack_data['access_code'],
+                status='PENDING'
+            )
+            
+            logger.info(f"[PaymentInitialize] Payment object created with ID {payment.id}")
+            
+            serializer = PaymentSerializer(payment)
+            return Response({
+                "payment": serializer.data,
+                "paystack_url": paystack_data['authorization_url']
+            }, status=201)
+            
+        except Exception as e:
+            logger.error(f"[PaymentInitialize] Error: {str(e)}", exc_info=True)
+            return Response({
+                'error': 'Payment initialization failed',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class PaystackWebhookView(APIView):
     permission_classes = [permissions.AllowAny]
