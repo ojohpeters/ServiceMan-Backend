@@ -1708,35 +1708,95 @@ Get notifications for current user.
 
 ---
 
-#### POST `/api/notifications/<id>/mark-read/`
-Mark notification as read.
+#### PATCH `/api/notifications/<id>/read/`
+Mark a specific notification as read.
 
 **Authentication:** Required
+
+**No Request Body Needed**
 
 **Response (200):**
 ```json
 {
-  "message": "Notification marked as read",
-  "notification": {
-    "id": 78,
-    "is_read": true
+  "detail": "Notification marked as read."
+}
+```
+
+**Example:**
+```javascript
+// Mark notification #78 as read
+const response = await fetch('/api/notifications/78/read/', {
+  method: 'PATCH',
+  headers: {
+    'Authorization': `Bearer ${accessToken}`,
+    'Content-Type': 'application/json'
   }
+});
+
+if (response.ok) {
+  console.log('Notification marked as read!');
+  // Update UI to show notification as read
 }
 ```
 
 ---
 
-#### POST `/api/notifications/mark-all-read/`
-Mark all notifications as read.
+#### PATCH `/api/notifications/mark-all-read/`
+Mark all notifications as read for the current user.
+
+**Authentication:** Required
+
+**No Request Body Needed**
+
+**Response (200):**
+```json
+{
+  "detail": "All notifications marked as read."
+}
+```
+
+**Example:**
+```javascript
+// Mark all notifications as read
+const response = await fetch('/api/notifications/mark-all-read/', {
+  method: 'PATCH',
+  headers: {
+    'Authorization': `Bearer ${accessToken}`,
+    'Content-Type': 'application/json'
+  }
+});
+
+if (response.ok) {
+  console.log('All notifications marked as read!');
+  // Update UI - clear unread badges
+}
+```
+
+---
+
+#### GET `/api/notifications/unread-count/`
+Get count of unread notifications for current user.
 
 **Authentication:** Required
 
 **Response (200):**
 ```json
 {
-  "message": "All notifications marked as read",
-  "count": 5
+  "unread_count": 5
 }
+```
+
+**Example:**
+```javascript
+// Get unread count for badge
+const response = await fetch('/api/notifications/unread-count/', {
+  headers: {
+    'Authorization': `Bearer ${accessToken}`
+  }
+});
+
+const { unread_count } = await response.json();
+// Update notification badge: <span class="badge">{unread_count}</span>
 ```
 
 ---
@@ -2467,7 +2527,7 @@ export function useNotifications() {
 
   async function markAsRead(notificationId) {
     try {
-      await api.post(`/notifications/${notificationId}/mark-read/`);
+      await api.patch(`/notifications/${notificationId}/read/`);
       await fetchNotifications(); // Refresh
     } catch (error) {
       console.error('Failed to mark as read:', error);
