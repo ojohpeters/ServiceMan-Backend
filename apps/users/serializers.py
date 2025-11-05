@@ -87,6 +87,9 @@ class SkillCreateSerializer(serializers.ModelSerializer):
 
 
 class ServicemanProfileSerializer(serializers.ModelSerializer):
+    # ✅ CRITICAL FIX: Expand user object instead of just showing ID
+    user = UserBasicSerializer(read_only=True)
+    category = serializers.SerializerMethodField()
     skills = serializers.SerializerMethodField()
     skill_ids = serializers.ListField(
         child=serializers.IntegerField(),
@@ -104,15 +107,25 @@ class ServicemanProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = ServicemanProfile
         fields = [
-            'user', 'category', 'skills', 'skill_ids', 'rating', 
+            'id', 'user', 'category', 'skills', 'skill_ids', 'rating', 
             'total_jobs_completed', 'bio', 'years_of_experience', 
             'phone_number', 'is_available', 'active_jobs_count', 
             'availability_status', 'is_approved', 'approved_by', 'approved_at',
             'rejection_reason', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['user', 'rating', 'total_jobs_completed', 'active_jobs_count', 
+        read_only_fields = ['id', 'user', 'rating', 'total_jobs_completed', 'active_jobs_count', 
                           'availability_status', 'is_approved', 'approved_by', 'approved_at',
                           'rejection_reason', 'created_at', 'updated_at']
+    
+    def get_category(self, obj) -> dict:
+        """Get category details"""
+        if obj.category:
+            return {
+                "id": obj.category.id,
+                "name": obj.category.name,
+                "icon": obj.category.icon if hasattr(obj.category, 'icon') else None
+            }
+        return None
     
     def get_skills(self, obj) -> list:
         """

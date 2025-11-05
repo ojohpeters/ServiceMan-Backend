@@ -272,8 +272,20 @@ class ServicemanProfileView(generics.RetrieveUpdateAPIView):
             
             logger.info(f"ServicemanProfileView.get_object - fields to defer: {fields_to_defer}")
             
-            # Get profile with deferred fields
-            queryset = ServicemanProfile.objects.filter(user=self.request.user)
+            # Get profile with deferred fields and optimized relations
+            # ✅ OPTIMIZATION: Use select_related to fetch user and category in same query
+            queryset = ServicemanProfile.objects.filter(user=self.request.user).select_related('user', 'category')
+            
+            # ✅ OPTIMIZATION: Use prefetch_related() for skills (ManyToMany)
+            try:
+                from django.db.models import Prefetch
+                queryset = queryset.prefetch_related(
+                    Prefetch('skills', queryset=Skill.objects.filter(is_active=True))
+                )
+            except Exception:
+                # Skills table doesn't exist yet, skip prefetch
+                pass
+            
             if fields_to_defer:
                 queryset = queryset.defer(*fields_to_defer)
             
@@ -537,6 +549,7 @@ class PublicServicemanProfileView(generics.RetrieveAPIView):
     def get_queryset(self):
         from django.core.exceptions import FieldError
         from django.db import connection
+        from django.db.models import Prefetch
         
         # Check which fields exist in the database
         with connection.cursor() as cursor:
@@ -547,8 +560,17 @@ class PublicServicemanProfileView(generics.RetrieveAPIView):
             """)
             existing_columns = [row[0] for row in cursor.fetchall()]
         
-        # Start with basic queryset
-        queryset = ServicemanProfile.objects.all()
+        # ✅ CRITICAL FIX: Use select_related to fetch user and category in same query
+        queryset = ServicemanProfile.objects.select_related('user', 'category')
+        
+        # ✅ OPTIMIZATION: Use prefetch_related() for skills (ManyToMany)
+        try:
+            queryset = queryset.prefetch_related(
+                Prefetch('skills', queryset=Skill.objects.filter(is_active=True))
+            )
+        except Exception:
+            # Skills table doesn't exist yet, skip prefetch
+            pass
         
         # Defer fields that don't exist yet
         fields_to_defer = []
