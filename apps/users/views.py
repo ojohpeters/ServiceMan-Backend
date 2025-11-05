@@ -1317,6 +1317,13 @@ class AdminBulkAssignCategoryView(APIView):
         updated_servicemen = []
         
         for serviceman in servicemen:
+            # Skip if user doesn't have serviceman_profile
+            if not hasattr(serviceman, 'serviceman_profile'):
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Serviceman user {serviceman.id} ({serviceman.username}) has no serviceman_profile")
+                continue
+            
             profile = serviceman.serviceman_profile
             profile.category = category
             profile.save()
@@ -1418,6 +1425,11 @@ class AdminGetServicemenByCategoryView(APIView):
                 
                 servicemen_data = []
                 for s in servicemen:
+                    # Skip if user doesn't have serviceman_profile
+                    if not hasattr(s, 'serviceman_profile'):
+                        logger.warning(f"Serviceman user {s.id} ({s.username}) has no serviceman_profile")
+                        continue
+                    
                     profile = s.serviceman_profile
                     
                     serviceman_info = {
@@ -1468,6 +1480,11 @@ class AdminGetServicemenByCategoryView(APIView):
             if unassigned.exists():
                 unassigned_data = []
                 for s in unassigned:
+                    # Skip if user doesn't have serviceman_profile
+                    if not hasattr(s, 'serviceman_profile'):
+                        logger.warning(f"Serviceman user {s.id} ({s.username}) has no serviceman_profile")
+                        continue
+                    
                     profile = s.serviceman_profile
                     
                     serviceman_info = {
