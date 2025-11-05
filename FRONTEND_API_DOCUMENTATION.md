@@ -1,7 +1,7 @@
 # 📚 ServiceMan Backend API - Complete Frontend Documentation
 
-**Version:** 2.0  
-**Last Updated:** November 4, 2025  
+**Version:** 2.1  
+**Last Updated:** November 5, 2025  
 **Base URL:** `https://your-api-domain.com/api`
 
 ---
@@ -306,7 +306,7 @@ Verify user email address.
 
 ---
 
-#### POST `/api/users/resend-verification/`
+#### POST `/api/users/resend-verification-email/`
 Resend email verification link.
 
 **Public Endpoint**
@@ -324,6 +324,532 @@ Resend email verification link.
   "detail": "If the email exists, a verification link has been sent."
 }
 ```
+
+**Security Note:** Returns generic message to prevent email enumeration attacks.
+
+---
+
+#### POST `/api/users/password-reset/`
+Request a password reset link via email.
+
+**Public Endpoint** - No authentication required
+
+**Request Body:**
+```json
+{
+  "email": "john@example.com"
+}
+```
+
+**Response (200):**
+```json
+{
+  "detail": "If the email exists in our system, a password reset link has been sent."
+}
+```
+
+**Features:**
+- 🔒 **Secure:** Generic response prevents email enumeration
+- ⏰ **Expires:** Reset link expires after 24 hours
+- 📧 **Beautiful Email:** HTML email with branded template
+- 🎯 **Single Use:** Token can only be used once
+
+**Email Template Includes:**
+- Reset password button
+- Direct link (if button doesn't work)
+- Security tips
+- Warning if user didn't request reset
+
+---
+
+#### POST `/api/users/password-reset-confirm/?uid=<uid>&token=<token>`
+Confirm password reset and set new password.
+
+**Public Endpoint** - No authentication required
+
+**Query Parameters:**
+- `uid` - User ID from reset email
+- `token` - Reset token from email
+
+**Request Body:**
+```json
+{
+  "password": "NewSecurePass123!"
+}
+```
+
+**Response (200):**
+```json
+{
+  "detail": "Password has been reset successfully."
+}
+```
+
+**Response (400):**
+```json
+{
+  "detail": "Invalid or expired token."
+}
+```
+
+**Validation Rules:**
+- Minimum 8 characters
+- Token expires after 24 hours
+- Token is single-use only
+
+**After Success:**
+- ✅ Password is updated
+- ✅ User receives confirmation email
+- ✅ User can login with new password
+- ⚠️ All active sessions remain valid (user should re-login)
+
+---
+
+### 📧 Email Verification & Password Reset - Complete Guide
+
+#### 🎯 Email Verification Flow
+
+**1. User Registers**
+```javascript
+// Frontend: User submits registration form
+const response = await fetch('/api/users/register/', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    username: 'john_doe',
+    email: 'john@example.com',
+    password: 'SecurePass123!',
+    user_type: 'CLIENT'
+  })
+});
+
+if (response.ok) {
+  // Show success message
+  alert('Registration successful! Please check your email to verify your account.');
+  // Redirect to "check your email" page
+  window.location.href = '/check-email';
+}
+```
+
+**2. Backend Sends Verification Email**
+
+The backend automatically:
+- ✅ Creates user account
+- ✅ Generates secure verification token
+- ✅ Sends beautiful HTML email with verification link
+- ✅ Link format: `http://your-frontend.com/verify-email?uid=42&token=abc123...`
+
+**3. User Clicks Email Link**
+```javascript
+// Frontend: Parse URL parameters and verify
+const urlParams = new URLSearchParams(window.location.search);
+const uid = urlParams.get('uid');
+const token = urlParams.get('token');
+
+// Call verification endpoint
+const response = await fetch(`/api/users/verify-email/?uid=${uid}&token=${token}`, {
+  method: 'GET'
+});
+
+const data = await response.json();
+
+if (response.ok) {
+  alert('Email verified successfully! You can now login.');
+  window.location.href = '/login';
+} else {
+  alert('Verification failed: ' + data.detail);
+}
+```
+
+**4. Resend Verification Email (if needed)**
+```javascript
+// Frontend: If user didn't receive email
+const response = await fetch('/api/users/resend-verification-email/', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    email: 'john@example.com'
+  })
+});
+
+if (response.ok) {
+  alert('Verification email resent! Please check your inbox.');
+}
+```
+
+---
+
+#### 🔐 Password Reset Flow
+
+**1. User Requests Password Reset**
+```javascript
+// Frontend: User enters email on forgot password page
+const response = await fetch('/api/users/password-reset/', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    email: 'john@example.com'
+  })
+});
+
+const data = await response.json();
+alert(data.detail); // Always shows generic message for security
+window.location.href = '/check-email-reset';
+```
+
+**2. Backend Sends Reset Email**
+
+The backend automatically:
+- ✅ Generates secure reset token (expires in 24 hours)
+- ✅ Sends beautiful HTML email with reset link
+- ✅ Link format: `http://your-frontend.com/reset-password?uid=42&token=xyz789...`
+- ⚠️ If email doesn't exist, still returns success (security)
+
+**3. User Clicks Reset Link**
+```javascript
+// Frontend: Show password reset form
+// Parse URL parameters
+const urlParams = new URLSearchParams(window.location.search);
+const uid = urlParams.get('uid');
+const token = urlParams.get('token');
+
+// User enters new password
+document.getElementById('resetForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  
+  const newPassword = document.getElementById('password').value;
+  const confirmPassword = document.getElementById('confirmPassword').value;
+  
+  if (newPassword !== confirmPassword) {
+    alert('Passwords do not match!');
+    return;
+  }
+  
+  if (newPassword.length < 8) {
+    alert('Password must be at least 8 characters!');
+    return;
+  }
+  
+  // Submit password reset
+  const response = await fetch(`/api/users/password-reset-confirm/?uid=${uid}&token=${token}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      password: newPassword
+    })
+  });
+  
+  const data = await response.json();
+  
+  if (response.ok) {
+    alert('Password reset successful! You can now login.');
+    window.location.href = '/login';
+  } else {
+    alert('Reset failed: ' + data.detail);
+  }
+});
+```
+
+**4. User Receives Confirmation Email**
+
+After successful reset:
+- ✅ Password is updated in database
+- ✅ User receives "password changed" confirmation email
+- ✅ User can login with new password
+
+---
+
+#### 🎨 Frontend Components (React Example)
+
+**Email Verification Page**
+```jsx
+import { useEffect, useState } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+
+export function VerifyEmailPage() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [status, setStatus] = useState('verifying');
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    const verifyEmail = async () => {
+      const uid = searchParams.get('uid');
+      const token = searchParams.get('token');
+
+      if (!uid || !token) {
+        setStatus('error');
+        setMessage('Invalid verification link.');
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/users/verify-email/?uid=${uid}&token=${token}`
+        );
+        const data = await response.json();
+
+        if (response.ok) {
+          setStatus('success');
+          setMessage('Email verified successfully!');
+          setTimeout(() => navigate('/login'), 2000);
+        } else {
+          setStatus('error');
+          setMessage(data.detail || 'Verification failed.');
+        }
+      } catch (error) {
+        setStatus('error');
+        setMessage('Network error. Please try again.');
+      }
+    };
+
+    verifyEmail();
+  }, [searchParams, navigate]);
+
+  return (
+    <div className="verify-email-container">
+      {status === 'verifying' && (
+        <div className="spinner">Verifying your email...</div>
+      )}
+      {status === 'success' && (
+        <div className="success">
+          <h2>✅ {message}</h2>
+          <p>Redirecting to login...</p>
+        </div>
+      )}
+      {status === 'error' && (
+        <div className="error">
+          <h2>❌ {message}</h2>
+          <button onClick={() => navigate('/resend-verification')}>
+            Resend Verification Email
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+**Forgot Password Page**
+```jsx
+import { useState } from 'react';
+
+export function ForgotPasswordPage() {
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const response = await fetch('/api/users/password-reset/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+
+      if (response.ok) {
+        setSent(true);
+      }
+    } catch (error) {
+      alert('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (sent) {
+    return (
+      <div className="check-email">
+        <h2>📧 Check Your Email</h2>
+        <p>
+          If an account exists for <strong>{email}</strong>, 
+          you will receive a password reset link shortly.
+        </p>
+        <p>Please check your inbox and spam folder.</p>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="forgot-password-form">
+      <h2>🔐 Forgot Password?</h2>
+      <p>Enter your email and we'll send you a reset link.</p>
+      
+      <input
+        type="email"
+        placeholder="your@email.com"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        required
+      />
+      
+      <button type="submit" disabled={loading}>
+        {loading ? 'Sending...' : 'Send Reset Link'}
+      </button>
+    </form>
+  );
+}
+```
+
+**Reset Password Page**
+```jsx
+import { useState } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+
+export function ResetPasswordPage() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    // Validation
+    if (password !== confirmPassword) {
+      setError('Passwords do not match!');
+      return;
+    }
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+
+    const uid = searchParams.get('uid');
+    const token = searchParams.get('token');
+
+    if (!uid || !token) {
+      setError('Invalid reset link.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await fetch(
+        `/api/users/password-reset-confirm/?uid=${uid}&token=${token}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        }
+      );
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert('✅ Password reset successful!');
+        navigate('/login');
+      } else {
+        setError(data.detail || 'Reset failed. Please try again.');
+      }
+    } catch (error) {
+      setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="reset-password-form">
+      <h2>🔑 Set New Password</h2>
+      
+      {error && <div className="error-message">{error}</div>}
+      
+      <input
+        type="password"
+        placeholder="New Password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        required
+        minLength={8}
+      />
+      
+      <input
+        type="password"
+        placeholder="Confirm Password"
+        value={confirmPassword}
+        onChange={(e) => setConfirmPassword(e.target.value)}
+        required
+        minLength={8}
+      />
+      
+      <ul className="password-requirements">
+        <li className={password.length >= 8 ? 'valid' : ''}>
+          At least 8 characters
+        </li>
+        <li className={password === confirmPassword && password ? 'valid' : ''}>
+          Passwords match
+        </li>
+      </ul>
+      
+      <button type="submit" disabled={loading}>
+        {loading ? 'Resetting...' : 'Reset Password'}
+      </button>
+    </form>
+  );
+}
+```
+
+---
+
+#### 🛠️ Email Configuration (Backend)
+
+**Required Environment Variables:**
+```env
+# Email Backend
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.gmail.com  # or your SMTP host
+EMAIL_PORT=587
+EMAIL_USE_TLS=True
+EMAIL_HOST_USER=your-email@gmail.com
+EMAIL_HOST_PASSWORD=your-app-password
+DEFAULT_FROM_EMAIL=ServiceMan Platform <noreply@servicemanplatform.com>
+
+# Frontend URL (for email links)
+FRONTEND_URL=https://your-frontend.com
+```
+
+**Email Templates Included:**
+- ✅ `email_verification.html` - Beautiful verification email
+- ✅ `password_reset.html` - Password reset request email
+- ✅ `password_reset_success.html` - Password changed confirmation
+- ✅ `base.html` - Base template with branding
+
+---
+
+#### ✅ Frontend Checklist
+
+**Email Verification:**
+- [ ] Create `/verify-email` route
+- [ ] Parse `uid` and `token` from URL
+- [ ] Call verification endpoint
+- [ ] Show success/error message
+- [ ] Redirect to login on success
+- [ ] Add "Resend email" option for errors
+
+**Password Reset:**
+- [ ] Create `/forgot-password` page with email form
+- [ ] Create `/reset-password` route
+- [ ] Parse `uid` and `token` from URL
+- [ ] Add password strength indicator
+- [ ] Validate password match
+- [ ] Show success message and redirect
+- [ ] Handle expired token error
+
+**UX Enhancements:**
+- [ ] Add loading states
+- [ ] Show password requirements
+- [ ] Add "Check spam folder" reminder
+- [ ] Link to support if issues persist
+- [ ] Add countdown timer for redirects
 
 ---
 
