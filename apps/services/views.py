@@ -11,6 +11,9 @@ from .permissions import (
     IsAdmin, IsClient, IsServiceman, IsRequestOwner, IsAssignedServiceman
 )
 from apps.users.models import User
+import logging
+
+logger = logging.getLogger(__name__)
 
 # --- Category Views ---
 
