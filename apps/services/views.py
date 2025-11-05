@@ -252,7 +252,22 @@ class ServiceRequestListCreateView(generics.ListCreateAPIView):
     
     def get_queryset(self):
         user = self.request.user
-        qs = ServiceRequest.objects.all()
+        # ✅ Optimize queries: fetch related users and their profiles
+        qs = ServiceRequest.objects.select_related(
+            'client',
+            'category',
+            'preferred_serviceman',
+            'serviceman',
+            'backup_serviceman'
+        ).prefetch_related(
+            'preferred_serviceman__serviceman_profile',
+            'preferred_serviceman__serviceman_profile__skills',
+            'serviceman__serviceman_profile',
+            'serviceman__serviceman_profile__skills',
+            'backup_serviceman__serviceman_profile',
+            'backup_serviceman__serviceman_profile__skills'
+        )
+        
         if user.user_type == 'ADMIN':
             return qs
         elif user.user_type == 'CLIENT':
@@ -374,9 +389,25 @@ class ServiceRequestDetailView(generics.RetrieveUpdateAPIView):
     - Clients: Can update description, address, booking_date
     - Servicemen: Can update status, estimated_cost (when assigned)
     """
-    queryset = ServiceRequest.objects.all()
     serializer_class = ServiceRequestSerializer
     permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        # ✅ Optimize queries: fetch related users and their profiles
+        return ServiceRequest.objects.select_related(
+            'client',
+            'category',
+            'preferred_serviceman',
+            'serviceman',
+            'backup_serviceman'
+        ).prefetch_related(
+            'preferred_serviceman__serviceman_profile',
+            'preferred_serviceman__serviceman_profile__skills',
+            'serviceman__serviceman_profile',
+            'serviceman__serviceman_profile__skills',
+            'backup_serviceman__serviceman_profile',
+            'backup_serviceman__serviceman_profile__skills'
+        )
 
     def get_object(self):
         obj = super().get_object()

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import Category, ServiceRequest
-from apps.users.serializers import UserSerializer
+from apps.users.serializers import UserSerializer, ServicemanProfileSerializer
 from apps.users.models import User
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -15,9 +15,9 @@ class CategoryCreateSerializer(serializers.ModelSerializer):
 
 class ServiceRequestSerializer(serializers.ModelSerializer):
     client = UserSerializer(read_only=True)
-    preferred_serviceman = UserSerializer(read_only=True)
-    serviceman = UserSerializer(read_only=True)
-    backup_serviceman = UserSerializer(read_only=True)
+    preferred_serviceman = serializers.SerializerMethodField()
+    serviceman = serializers.SerializerMethodField()
+    backup_serviceman = serializers.SerializerMethodField()
     category = CategorySerializer(read_only=True)
     category_id = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all(), source='category', write_only=True)
     preferred_serviceman_id = serializers.PrimaryKeyRelatedField(
@@ -40,6 +40,24 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at', 'inspection_completed_at', 'work_completed_at'
         ]
         read_only_fields = ['client', 'serviceman', 'backup_serviceman', 'status', 'created_at', 'updated_at']
+    
+    def get_preferred_serviceman(self, obj):
+        """Get full serviceman profile for preferred serviceman"""
+        if obj.preferred_serviceman and hasattr(obj.preferred_serviceman, 'serviceman_profile'):
+            return ServicemanProfileSerializer(obj.preferred_serviceman.serviceman_profile).data
+        return None
+    
+    def get_serviceman(self, obj):
+        """Get full serviceman profile for assigned serviceman"""
+        if obj.serviceman and hasattr(obj.serviceman, 'serviceman_profile'):
+            return ServicemanProfileSerializer(obj.serviceman.serviceman_profile).data
+        return None
+    
+    def get_backup_serviceman(self, obj):
+        """Get full serviceman profile for backup serviceman"""
+        if obj.backup_serviceman and hasattr(obj.backup_serviceman, 'serviceman_profile'):
+            return ServicemanProfileSerializer(obj.backup_serviceman.serviceman_profile).data
+        return None
 
     def create(self, validated_data):
         user = self.context['request'].user
