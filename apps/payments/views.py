@@ -196,9 +196,16 @@ class InitializePaymentView(APIView):
         responses={201: PaymentSerializer}
     )
     def post(self, request):
-        service_request_id = request.data.get('service_request')
+        # Accept both 'service_request' and 'service_request_id' for backward compatibility
+        service_request_id = request.data.get('service_request') or request.data.get('service_request_id')
         payment_type = request.data.get('payment_type')
         amount = request.data.get('amount')
+        
+        if not service_request_id:
+            return Response({
+                'error': 'service_request or service_request_id is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         service_request = get_object_or_404(ServiceRequest, id=service_request_id)
         reference = f"{service_request_id}-{payment_type}-{timezone.now().timestamp()}"
         callback_url = settings.FRONTEND_URL + "/payment/callback"
