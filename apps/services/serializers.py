@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import Category, ServiceRequest
 from apps.users.serializers import UserSerializer
+from apps.users.models import User
 
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
