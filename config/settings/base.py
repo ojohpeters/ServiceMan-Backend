@@ -40,11 +40,14 @@ CACHES = {
 }
 
 # ✅ FIX: Remove trailing slashes from URLs (CORS requirement)
-frontend_urls_raw = env.list("FRONTEND_URL", default=["http://localhost:3000"])
+frontend_urls_raw = env.list("FRONTEND_URL", default=[
+    "https://serviceman-frontend.vercel.app",
+    "http://localhost:3000"
+])
 CORS_ALLOWED_ORIGINS = [url.rstrip('/') for url in frontend_urls_raw]
 
 # Frontend URL for callbacks (use first URL from CORS list)
-FRONTEND_URL = frontend_urls_raw[0].rstrip('/') if frontend_urls_raw else "http://localhost:3000"
+FRONTEND_URL = frontend_urls_raw[0].rstrip('/') if frontend_urls_raw else "https://serviceman-frontend.vercel.app"
 
 # Paystack settings
 PAYSTACK_SECRET_KEY = env("PAYSTACK_SECRET_KEY", default="")
