@@ -18,11 +18,12 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # CORS settings
 frontend_urls = os.environ.get('FRONTEND_URL', '').split(',')
-CORS_ALLOWED_ORIGINS = [url.strip() for url in frontend_urls if url.strip()]
+# ✅ FIX: Remove trailing slashes from URLs (CORS requirement)
+CORS_ALLOWED_ORIGINS = [url.strip().rstrip('/') for url in frontend_urls if url.strip()]
 CORS_ALLOW_CREDENTIALS = True
 
 # Frontend URL for callbacks (use first URL from CORS list)
-FRONTEND_URL = frontend_urls[0].strip() if frontend_urls and frontend_urls[0].strip() else 'http://localhost:3000'
+FRONTEND_URL = frontend_urls[0].strip().rstrip('/') if frontend_urls and frontend_urls[0].strip() else 'http://localhost:3000'
 
 # Paystack settings
 PAYSTACK_SECRET_KEY = os.environ.get('PAYSTACK_SECRET_KEY')
