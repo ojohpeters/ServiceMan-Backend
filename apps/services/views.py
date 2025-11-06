@@ -260,6 +260,7 @@ class ServiceRequestListCreateView(generics.ListCreateAPIView):
             'serviceman',
             'backup_serviceman'
         ).prefetch_related(
+            'client__client_profile',  # ✅ Added: Fetch client phone number
             'preferred_serviceman__serviceman_profile',
             'preferred_serviceman__serviceman_profile__skills',
             'serviceman__serviceman_profile',
@@ -401,6 +402,7 @@ class ServiceRequestDetailView(generics.RetrieveUpdateAPIView):
             'serviceman',
             'backup_serviceman'
         ).prefetch_related(
+            'client__client_profile',  # ✅ Added: Fetch client phone number
             'preferred_serviceman__serviceman_profile',
             'preferred_serviceman__serviceman_profile__skills',
             'serviceman__serviceman_profile',

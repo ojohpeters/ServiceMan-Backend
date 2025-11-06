@@ -5,23 +5,38 @@ from .models import ClientProfile, ServicemanProfile, Skill
 User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
+    phone_number = serializers.SerializerMethodField()
+    
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'user_type', 'is_email_verified']
+        fields = ['id', 'username', 'email', 'user_type', 'is_email_verified', 'phone_number']
+    
+    def get_phone_number(self, obj):
+        """Get phone number from client profile if exists"""
+        if hasattr(obj, 'client_profile'):
+            return obj.client_profile.phone_number
+        return None
 
 class UserBasicSerializer(serializers.ModelSerializer):
     """Lightweight serializer for nested user data in serviceman profiles"""
     full_name = serializers.SerializerMethodField()
+    phone_number = serializers.SerializerMethodField()
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'full_name', 'first_name', 'last_name', 'user_type', 'is_email_verified']
+        fields = ['id', 'username', 'email', 'full_name', 'first_name', 'last_name', 'user_type', 'is_email_verified', 'phone_number']
         read_only_fields = fields
     
     def get_full_name(self, obj) -> str:
         """Get user's full name or fallback to username"""
         full_name = obj.get_full_name()
         return full_name if full_name else obj.username
+    
+    def get_phone_number(self, obj):
+        """Get phone number from client profile if exists"""
+        if hasattr(obj, 'client_profile'):
+            return obj.client_profile.phone_number
+        return None
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
