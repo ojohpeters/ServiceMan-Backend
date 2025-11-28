@@ -1,0 +1,100 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+/media
+/staticfiles
+/static
+*.pot
+*.pyc
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.hypothesis/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Documentation (keep only essential)
+# Remove these extra guide files from GitHub
+FRONTEND_TIMEZONE_FIX.md
+LATEST_UPDATES_SUMMARY.md
+PAYSTACK_CALLBACK_CONFIGURATION.md
+TIMEZONE_AND_CLIENT_DETAILS_UPDATE.md
+CLIENT_FINAL_PAYMENT_GUIDE.md
+QUICK_FIX_PAYMENT_INITIALIZATION.md
+SERVICEMAN_SUBMIT_ESTIMATE_GUIDE.md
+FRONTEND_BOOKING_FLOW_WITH_SERVICEMAN.md
+SERVICEMAN_SELECTION_AND_ASSIGNMENT_GUIDE.md
+PYTHON_VERSION_GUIDE.md
+
+# Keep only:
+# - README.md (main entry point)
+# - FRONTEND_API_DOCUMENTATION.md (complete API docs)
+# - DEPLOYMENT_GUIDE.md (deployment instructions)
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+

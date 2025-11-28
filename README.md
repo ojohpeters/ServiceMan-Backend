@@ -2,7 +2,7 @@
 
 Production-grade Django REST API for connecting clients with skilled service providers.
 
-[![Python](https://img.shields.io/badge/Python-3.13-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
 [![Django](https://img.shields.io/badge/Django-4.2-green.svg)](https://www.djangoproject.com/)
 [![DRF](https://img.shields.io/badge/DRF-3.16-red.svg)](https://www.django-rest-framework.org/)
 [![License](https://img.shields.io/badge/License-Proprietary-yellow.svg)]()
@@ -11,20 +11,24 @@ Production-grade Django REST API for connecting clients with skilled service pro
 
 ## 📚 Documentation
 
-**👉 [Complete Frontend API Documentation](FRONTEND_API_DOCUMENTATION.md)**
+### **👉 [Complete Frontend API Documentation](FRONTEND_API_DOCUMENTATION.md)**
 
-This comprehensive guide includes:
+**This is the ONLY documentation file you need!** It includes everything:
+
 - ✅ All API endpoints with request/response examples
 - ✅ Authentication & JWT token management
 - ✅ Complete service request workflow (8 steps)
-- ✅ Paystack payment integration
+- ✅ Paystack payment integration & callback setup
 - ✅ Real-time notifications system
 - ✅ Skills & serviceman management
 - ✅ Error handling best practices
 - ✅ React/Vue.js code examples
+- ✅ Timezone handling for notifications
 - ✅ Common scenarios & use cases
 
-**For Deployment:** See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
+### **For Deployment:** [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
+
+**Note:** All other guide files have been consolidated into the main documentation above.
 
 ---
 
@@ -32,7 +36,7 @@ This comprehensive guide includes:
 
 ### Prerequisites
 
-- Python 3.13+
+- Python 3.11+ (3.11 or 3.12 recommended)
 - PostgreSQL 12+
 - Redis (for Celery tasks)
 
